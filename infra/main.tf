@@ -56,10 +56,10 @@ resource "aws_lambda_function" "clients" {
     }
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = "crm-feature2"
-  }
+  #tags = {
+  #  Environment = var.environment
+  #  Project     = "crm-feature2"
+  #}
 }
 
 resource "aws_lambda_function" "accounts" {
@@ -78,10 +78,10 @@ resource "aws_lambda_function" "accounts" {
     }
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = "crm-feature2"
-  }
+  #tags = {
+  #  Environment = var.environment
+  #  Project     = "crm-feature2"
+  #}
 }
 
 # =======================
@@ -97,10 +97,10 @@ resource "aws_apigatewayv2_api" "crm_api" {
     allow_headers = ["Content-Type", "Authorization"]
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = "crm-feature2"
-  }
+  #tags = {
+  #  Environment = var.environment
+  #  Project     = "crm-feature2"
+  #}
 }
 
 resource "aws_apigatewayv2_stage" "default" {
@@ -108,10 +108,10 @@ resource "aws_apigatewayv2_stage" "default" {
   name        = "$default"
   auto_deploy = true
 
-  tags = {
-    Environment = var.environment
-    Project     = "crm-feature2"
-  }
+  #tags = {
+  #  Environment = var.environment
+  #  Project     = "crm-feature2"
+  #}
 }
 
 # =======================
