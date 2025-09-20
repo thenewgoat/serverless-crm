@@ -1,0 +1,44 @@
+name: Deploy CRM Feature 2
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Package Clients Lambda
+        run: |
+          cd lambdas
+          zip -r clients.zip clients.py requirements.txt
+          zip -r accounts.zip accounts.py requirements.txt
+          mv clients.zip ../infra/
+          mv accounts.zip ../infra/
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.2
+
+      - name: Terraform Init
+        working-directory: infra
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: infra
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: infra
+        run: terraform apply -auto-approve tfplan
