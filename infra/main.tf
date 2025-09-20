@@ -42,7 +42,7 @@ data "archive_file" "accounts" {
 # =======================
 resource "aws_lambda_function" "clients" {
   function_name = "crm-clients-${var.environment}"
-  handler       = "clients.create_client"
+  handler       = "clients.handler"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
 
@@ -64,7 +64,7 @@ resource "aws_lambda_function" "clients" {
 
 resource "aws_lambda_function" "accounts" {
   function_name = "crm-accounts-${var.environment}"
-  handler       = "accounts.create_account"
+  handler       = "accounts.handler"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
 

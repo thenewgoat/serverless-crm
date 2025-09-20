@@ -38,6 +38,17 @@ jobs:
       - name: Terraform Init
         working-directory: infra
         run: terraform init
+        
+      - name: Import IAM role if present
+        working-directory: infra
+        run: |
+          ROLE_NAME="crm-feature2-lambda-role-${TF_VAR_environment}"
+          if aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+            echo "Role $ROLE_NAME exists in AWS, importing into Terraform state..."
+            terraform import -input=false aws_iam_role.lambda_exec $ROLE_NAME || true
+          else
+            echo "Role $ROLE_NAME does not exist, skipping import."
+          fi
 
       - name: Terraform Destroy
         working-directory: infra

@@ -14,3 +14,19 @@ def delete_account(event, context):
         "statusCode": 200,
         "body": json.dumps({ "id": account_id, "status": "deleted" })
     }
+
+def handler(event, context):
+    """Main Lambda entrypoint for all /api/accounts routes."""
+    method = event.get("requestContext", {}).get("http", {}).get("method")
+    route  = event.get("requestContext", {}).get("http", {}).get("path")
+
+    if method == "POST" and route == "/api/accounts":
+        return create_account(event, context)
+
+    if method == "DELETE" and route.startswith("/api/accounts/"):
+        return delete_account(event, context)
+
+    return {
+        "statusCode": 404,
+        "body": json.dumps({"error": "Not found"})
+    }
