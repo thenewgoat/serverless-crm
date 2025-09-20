@@ -23,6 +23,21 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 }
 
 # =======================
+# Lambda Packaging (Archive)
+# =======================
+data "archive_file" "clients" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambdas/clients"
+  output_path = "${path.module}/../lambdas/clients.zip"
+}
+
+data "archive_file" "accounts" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambdas/accounts"
+  output_path = "${path.module}/../lambdas/accounts.zip"
+}
+
+# =======================
 # Lambda Functions
 # =======================
 resource "aws_lambda_function" "clients" {
@@ -30,17 +45,14 @@ resource "aws_lambda_function" "clients" {
   handler       = "clients.create_client"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
-  filename      = "${path.module}/../lambdas/clients.zip"
+
+  filename         = data.archive_file.clients.output_path
+  source_code_hash = data.archive_file.clients.output_base64sha256
 
   environment {
     variables = {
       ENVIRONMENT = var.environment
       REGION      = var.aws_region
-      # Placeholders for future features:
-      # DB_CONNECTION      = var.db_connection
-      # SECRETS_MANAGER_ARN = var.secrets_manager_arn
-      # JWT_ISSUER         = var.jwt_issuer
-      # JWT_AUDIENCE       = var.jwt_audience
     }
   }
 
@@ -55,7 +67,9 @@ resource "aws_lambda_function" "accounts" {
   handler       = "accounts.create_account"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
-  filename      = "${path.module}/../lambdas/accounts.zip"
+
+  filename         = data.archive_file.accounts.output_path
+  source_code_hash = data.archive_file.accounts.output_base64sha256
 
   environment {
     variables = {
@@ -175,4 +189,3 @@ resource "aws_lambda_permission" "allow_accounts" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.crm_api.execution_arn}/*/*"
 }
-
