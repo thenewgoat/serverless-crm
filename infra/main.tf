@@ -2,8 +2,11 @@ provider "aws" {
   region = var.aws_region
 }
 
+# =======================
+# IAM Role for Lambdas
+# =======================
 resource "aws_iam_role" "lambda_exec" {
-  name = "crm-feature2-lambda-role"
+  name = "crm-feature2-lambda-role-${var.environment}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
@@ -19,41 +22,87 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Package Lambdas
+# =======================
+# Lambda Functions
+# =======================
 resource "aws_lambda_function" "clients" {
-  function_name = "crm-clients"
+  function_name = "crm-clients-${var.environment}"
   handler       = "clients.create_client"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
   filename      = "${path.module}/../lambdas/clients.zip"
+
+  environment {
+    variables = {
+      ENVIRONMENT = var.environment
+      REGION      = var.aws_region
+      # Placeholders for future features:
+      # DB_CONNECTION      = var.db_connection
+      # SECRETS_MANAGER_ARN = var.secrets_manager_arn
+      # JWT_ISSUER         = var.jwt_issuer
+      # JWT_AUDIENCE       = var.jwt_audience
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "crm-feature2"
+  }
 }
 
 resource "aws_lambda_function" "accounts" {
-  function_name = "crm-accounts"
+  function_name = "crm-accounts-${var.environment}"
   handler       = "accounts.create_account"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec.arn
   filename      = "${path.module}/../lambdas/accounts.zip"
+
+  environment {
+    variables = {
+      ENVIRONMENT = var.environment
+      REGION      = var.aws_region
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "crm-feature2"
+  }
 }
 
+# =======================
 # API Gateway (HTTP API)
+# =======================
 resource "aws_apigatewayv2_api" "crm_api" {
-  name          = "crm-feature2-api"
+  name          = "crm-feature2-api-${var.environment}"
   protocol_type = "HTTP"
+
   cors_configuration {
-    allow_origins = ["*"]
+    allow_origins = ["*"] # for frontend testing, restrict in prod
     allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     allow_headers = ["Content-Type", "Authorization"]
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "crm-feature2"
   }
 }
 
 resource "aws_apigatewayv2_stage" "default" {
-  api_id = aws_apigatewayv2_api.crm_api.id
-  name   = "$default"
+  api_id      = aws_apigatewayv2_api.crm_api.id
+  name        = "$default"
   auto_deploy = true
+
+  tags = {
+    Environment = var.environment
+    Project     = "crm-feature2"
+  }
 }
 
-# Integrations
+# =======================
+# API Integrations
+# =======================
 resource "aws_apigatewayv2_integration" "clients" {
   api_id           = aws_apigatewayv2_api.crm_api.id
   integration_type = "AWS_PROXY"
@@ -66,7 +115,9 @@ resource "aws_apigatewayv2_integration" "accounts" {
   integration_uri  = aws_lambda_function.accounts.invoke_arn
 }
 
-# Routes (Clients)
+# =======================
+# API Routes (Clients)
+# =======================
 resource "aws_apigatewayv2_route" "create_client" {
   api_id    = aws_apigatewayv2_api.crm_api.id
   route_key = "POST /api/clients"
@@ -91,7 +142,9 @@ resource "aws_apigatewayv2_route" "delete_client" {
   target    = "integrations/${aws_apigatewayv2_integration.clients.id}"
 }
 
-# Routes (Accounts)
+# =======================
+# API Routes (Accounts)
+# =======================
 resource "aws_apigatewayv2_route" "create_account" {
   api_id    = aws_apigatewayv2_api.crm_api.id
   route_key = "POST /api/accounts"
@@ -104,7 +157,9 @@ resource "aws_apigatewayv2_route" "delete_account" {
   target    = "integrations/${aws_apigatewayv2_integration.accounts.id}"
 }
 
-# Lambda permissions
+# =======================
+# Lambda Permissions
+# =======================
 resource "aws_lambda_permission" "allow_clients" {
   statement_id  = "AllowAPIGatewayInvokeClients"
   action        = "lambda:InvokeFunction"
@@ -121,6 +176,9 @@ resource "aws_lambda_permission" "allow_accounts" {
   source_arn    = "${aws_apigatewayv2_api.crm_api.execution_arn}/*/*"
 }
 
+# =======================
+# Outputs
+# =======================
 output "api_url" {
   value = aws_apigatewayv2_api.crm_api.api_endpoint
 }

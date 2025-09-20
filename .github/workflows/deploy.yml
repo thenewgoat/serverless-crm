@@ -8,6 +8,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      TF_VAR_environment: dev   # Terraform will pick this up automatically
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Package Clients Lambda
+      - name: Package Clients & Accounts Lambdas
         run: |
           cd lambdas
           zip -r clients.zip clients.py requirements.txt
@@ -42,3 +48,28 @@ jobs:
         if: github.ref == 'refs/heads/main'
         working-directory: infra
         run: terraform apply -auto-approve tfplan
+
+      # ==============================
+      # Capture Terraform outputs
+      # ==============================
+      - name: Export API URL to JSON
+        working-directory: infra
+        run: terraform output -json > tf_outputs.json
+
+      - name: Show API URL
+        run: cat infra/tf_outputs.json | jq -r .api_url.value
+
+      # ==============================
+      # Write API URL into .env
+      # ==============================
+      - name: Create .env file for frontend
+        run: |
+          API_URL=$(cat infra/tf_outputs.json | jq -r .api_url.value)
+          echo "VITE_API_URL=$API_URL" > .env
+          echo "Generated .env file with API URL: $API_URL"
+
+      - name: Upload .env as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: env-file
+          path: .env
