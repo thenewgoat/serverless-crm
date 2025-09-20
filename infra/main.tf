@@ -176,9 +176,3 @@ resource "aws_lambda_permission" "allow_accounts" {
   source_arn    = "${aws_apigatewayv2_api.crm_api.execution_arn}/*/*"
 }
 
-# =======================
-# Outputs
-# =======================
-output "api_url" {
-  value = aws_apigatewayv2_api.crm_api.api_endpoint
-}
