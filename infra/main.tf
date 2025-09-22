@@ -185,9 +185,9 @@ resource "aws_lambda_function" "clients" {
     variables = {
       ENVIRONMENT = var.environment
       REGION      = var.aws_region
-      DB_NAME     = module.aurora.database_name
-      DB_ARN      = module.aurora.cluster_arn
-      SECRET_ARN  = aws_secretsmanager_secret.db_secret.arn
+      AURORA_CLUSTER_ARN   = module.aurora.cluster_arn
+      AURORA_SECRET_ARN    = aws_secretsmanager_secret.db_secret.arn
+      DB_NAME              = var.db_name
     }
   }
 }
@@ -204,7 +204,7 @@ resource "aws_lambda_function" "accounts" {
     variables = {
       ENVIRONMENT = var.environment
       REGION      = var.aws_region
-      DB_NAME     = module.aurora.database_name
+      DB_NAME     = var.db_name
       DB_ARN      = module.aurora.cluster_arn
       SECRET_ARN  = aws_secretsmanager_secret.db_secret.arn
     }

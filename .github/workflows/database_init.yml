@@ -2,9 +2,6 @@ name: Database Migration
 
 on:
   workflow_dispatch: # run manually
-  push:
-    paths:
-      - 'database/schema.sql'
 
 jobs:
   migrate:
@@ -32,4 +29,4 @@ jobs:
                 --database crm \
                 --sql "$stmt"
             fi
-          done < schema.sql
+          done < db/schema.sql

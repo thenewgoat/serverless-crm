@@ -16,6 +16,12 @@ variable "db_password" {
   default = "SuperSecurePassword123!"
 }
 
+variable "db_name" {
+  description = "The name of the initial database to create in Aurora"
+  type        = string
+  default     = "crm"
+}
+
 
 # Optional, uncomment when needed
 # variable "db_connection" {}
