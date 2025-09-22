@@ -20,6 +20,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+        
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,10 +36,22 @@ jobs:
       - name: Package Clients & Accounts Lambdas
         run: |
           cd lambdas
-          zip -r clients.zip clients.py requirements.txt
-          zip -r accounts.zip accounts.py requirements.txt
-          mv clients.zip ../infra/
-          mv accounts.zip ../infra/
+
+          # -------- Clients --------
+          mkdir -p build/clients
+          cp clients.py build/clients/
+          pip install -r requirements.txt -t build/clients/
+          cd build/clients
+          zip -r ../../../infra/clients.zip .
+          cd ../../..
+
+          # -------- Accounts --------
+          mkdir -p build/accounts
+          cp accounts.py build/accounts/
+          pip install -r requirements.txt -t build/accounts/
+          cd build/accounts
+          zip -r ../../../infra/accounts.zip .
+          cd ../../..
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -57,6 +71,10 @@ jobs:
         working-directory: infra
         run: TF_LOG=DEBUG terraform apply -auto-approve tfplan
 
+      - name: Terraform Destroy (on failure)
+        if: failure() || cancelled()
+        working-directory: infra
+        run: terraform destroy -auto-approve
       # ==============================
       # Capture Terraform outputs
       # ==============================
@@ -81,3 +99,4 @@ jobs:
         with:
           name: env-file
           path: .env
+

@@ -1,67 +1,92 @@
 import json
+import os
 import uuid
 import boto3
-import os
+import psycopg2
 
-rds = boto3.client("rds-data")
-
-DB_ARN = os.environ["AURORA_CLUSTER_ARN"]
-SECRET_ARN = os.environ["AURORA_SECRET_ARN"]
+# Environment variables from Terraform
+REGION = os.environ["REGION"]
+DB_HOST = os.environ["DB_HOST"]
+DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ["DB_NAME"]
+DB_USER = os.environ["DB_USER"]
+
+rds = boto3.client("rds")
 
 
-def execute_sql(sql, params=[]):
-    """Helper to execute SQL against Aurora via Data API."""
-    return rds.execute_statement(
-        resourceArn=DB_ARN,
-        secretArn=SECRET_ARN,
-        database=DB_NAME,
-        sql=sql,
-        parameters=params
+def get_db_connection():
+    """Generate IAM auth token and connect to Aurora via RDS Proxy."""
+    token = rds.generate_db_auth_token(
+        DBHostname=DB_HOST,
+        Port=int(DB_PORT),
+        DBUsername=DB_USER,
+        Region=REGION,
     )
 
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=token,
+        database=DB_NAME,
+        sslmode="require",
+    )
+    return conn
+
+
+# ==========================
+# CRUD Operations
+# ==========================
 
 def create_client(event, context):
     body = json.loads(event.get("body", "{}"))
-    client_id = f"client_{uuid.uuid4().hex[:8]}"
+    client_id = str(uuid.uuid4())
 
     sql = """
-        INSERT INTO clients (client_id, first_name, last_name, email_address, phone_number)
-        VALUES (:client_id, :first_name, :last_name, :email_address, :phone_number)
+        INSERT INTO clients (client_id, first_name, last_name, email, phone)
+        VALUES (%s, %s, %s, %s, %s)
     """
-    params = [
-        {"name": "client_id", "value": {"stringValue": client_id}},
-        {"name": "first_name", "value": {"stringValue": body.get("firstName", "")}},
-        {"name": "last_name", "value": {"stringValue": body.get("lastName", "")}},
-        {"name": "email_address", "value": {"stringValue": body.get("email", "")}},
-        {"name": "phone_number", "value": {"stringValue": body.get("phone", "")}},
-    ]
 
-    execute_sql(sql, params)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (
+                    client_id,
+                    body.get("firstName"),
+                    body.get("lastName"),
+                    body.get("email"),
+                    body.get("phone"),
+                ),
+            )
+        conn.commit()
 
-    return {
-        "statusCode": 201,
-        "body": json.dumps({"id": client_id, **body})
-    }
+    return {"statusCode": 201, "body": json.dumps({"id": client_id, **body})}
 
 
 def get_client(event, context):
     client_id = event.get("pathParameters", {}).get("id")
 
-    sql = "SELECT client_id, first_name, last_name, email_address, phone_number FROM clients WHERE client_id = :client_id"
-    params = [{"name": "client_id", "value": {"stringValue": client_id}}]
+    sql = """
+        SELECT client_id, first_name, last_name, email, phone
+        FROM clients
+        WHERE client_id = %s
+    """
 
-    result = execute_sql(sql, params)
-    if not result.get("records"):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (client_id,))
+            row = cur.fetchone()
+
+    if not row:
         return {"statusCode": 404, "body": json.dumps({"error": "Client not found"})}
 
-    record = result["records"][0]
     client = {
-        "id": record[0]["stringValue"],
-        "firstName": record[1]["stringValue"],
-        "lastName": record[2]["stringValue"],
-        "email": record[3]["stringValue"],
-        "phone": record[4]["stringValue"],
+        "id": row[0],
+        "firstName": row[1],
+        "lastName": row[2],
+        "email": row[3],
+        "phone": row[4],
     }
 
     return {"statusCode": 200, "body": json.dumps(client)}
@@ -73,41 +98,46 @@ def update_client(event, context):
 
     sql = """
         UPDATE clients
-        SET first_name = :first_name,
-            last_name = :last_name,
-            email_address = :email_address,
-            phone_number = :phone_number
-        WHERE client_id = :client_id
+        SET first_name = %s,
+            last_name = %s,
+            email = %s,
+            phone = %s
+        WHERE client_id = %s
     """
-    params = [
-        {"name": "first_name", "value": {"stringValue": body.get("firstName", "")}},
-        {"name": "last_name", "value": {"stringValue": body.get("lastName", "")}},
-        {"name": "email_address", "value": {"stringValue": body.get("email", "")}},
-        {"name": "phone_number", "value": {"stringValue": body.get("phone", "")}},
-        {"name": "client_id", "value": {"stringValue": client_id}},
-    ]
 
-    execute_sql(sql, params)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (
+                    body.get("firstName"),
+                    body.get("lastName"),
+                    body.get("email"),
+                    body.get("phone"),
+                    client_id,
+                ),
+            )
+        conn.commit()
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"id": client_id, **body})
-    }
+    return {"statusCode": 200, "body": json.dumps({"id": client_id, **body})}
 
 
 def delete_client(event, context):
     client_id = event.get("pathParameters", {}).get("id")
 
-    sql = "DELETE FROM clients WHERE client_id = :client_id"
-    params = [{"name": "client_id", "value": {"stringValue": client_id}}]
+    sql = "DELETE FROM clients WHERE client_id = %s"
 
-    execute_sql(sql, params)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (client_id,))
+        conn.commit()
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"id": client_id, "status": "deleted"})
-    }
+    return {"statusCode": 200, "body": json.dumps({"id": client_id, "status": "deleted"})}
 
+
+# ==========================
+# Main handler
+# ==========================
 
 def handler(event, context):
     method = event.get("requestContext", {}).get("http", {}).get("method")

@@ -41,16 +41,11 @@ output "vpc_id" {
 }
 
 # =======================
-# Database (Aurora + Secrets)
+# Database (Aurora)
 # =======================
 output "aurora_cluster_arn" {
   description = "ARN of the Aurora PostgreSQL cluster"
   value       = module.aurora.cluster_arn
-}
-
-output "aurora_secret_arn" {
-  description = "ARN of the Secrets Manager secret storing DB credentials"
-  value       = aws_secretsmanager_secret.db_secret.arn
 }
 
 output "database_name" {

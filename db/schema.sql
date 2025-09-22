@@ -1,3 +1,18 @@
+DO $$
+BEGIN
+   -- Create the crmadmin user if it doesn't exist
+   IF NOT EXISTS (
+      SELECT FROM pg_catalog.pg_roles WHERE rolname = 'crmadmin'
+   ) THEN
+      CREATE ROLE crmadmin LOGIN;
+   END IF;
+
+   -- Ensure the crmadmin role has rds_iam granted
+   GRANT rds_iam TO crmadmin;
+END
+$$;
+-- Enable pgcrypto extension for UUID generation
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Clients table
 CREATE TABLE IF NOT EXISTS clients (
     client_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),

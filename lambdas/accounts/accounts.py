@@ -1,63 +1,90 @@
 import json
+import os
 import uuid
 import boto3
-import os
+import psycopg2
 
-rds = boto3.client("rds-data")
-
-DB_ARN = os.environ["AURORA_CLUSTER_ARN"]
-SECRET_ARN = os.environ["AURORA_SECRET_ARN"]
+# Environment variables from Terraform
+REGION = os.environ["REGION"]
+DB_HOST = os.environ["DB_HOST"]
+DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ["DB_NAME"]
+DB_USER = os.environ["DB_USER"]
+
+rds = boto3.client("rds")
 
 
-def execute_sql(sql, params=[]):
-    return rds.execute_statement(
-        resourceArn=DB_ARN,
-        secretArn=SECRET_ARN,
-        database=DB_NAME,
-        sql=sql,
-        parameters=params
+def get_db_connection():
+    """Generate IAM auth token and connect to Aurora via RDS Proxy."""
+    token = rds.generate_db_auth_token(
+        DBHostname=DB_HOST,
+        Port=int(DB_PORT),
+        DBUsername=DB_USER,
+        Region=REGION,
     )
 
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=token,
+        database=DB_NAME,
+        sslmode="require",
+    )
+    return conn
+
+
+# ==========================
+# CRUD Operations
+# ==========================
 
 def create_account(event, context):
     body = json.loads(event.get("body", "{}"))
-    account_id = f"acct_{uuid.uuid4().hex[:8]}"
+    account_id = str(uuid.uuid4())
 
     sql = """
-        INSERT INTO accounts (account_id, client_id, account_type, account_status, opening_date, initial_deposit, currency)
-        VALUES (:account_id, :client_id, :account_type, :account_status, current_date, :initial_deposit, :currency)
+        INSERT INTO accounts (
+            account_id, client_id, account_type, status,
+            opening_date, initial_deposit, currency, branch_id
+        )
+        VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s, %s)
     """
-    params = [
-        {"name": "account_id", "value": {"stringValue": account_id}},
-        {"name": "client_id", "value": {"stringValue": body.get("clientId", "")}},
-        {"name": "account_type", "value": {"stringValue": body.get("accountType", "Savings")}},
-        {"name": "account_status", "value": {"stringValue": "Active"}},
-        {"name": "initial_deposit", "value": {"doubleValue": float(body.get("initialDeposit", 0))}},
-        {"name": "currency", "value": {"stringValue": body.get("currency", "SGD")}},
-    ]
 
-    execute_sql(sql, params)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (
+                    account_id,
+                    body.get("clientId"),
+                    body.get("accountType", "Savings"),
+                    "Active",
+                    float(body.get("initialDeposit", 0)),
+                    body.get("currency", "SGD"),
+                    body.get("branchId", "MAIN"),
+                ),
+            )
+        conn.commit()
 
-    return {
-        "statusCode": 201,
-        "body": json.dumps({"id": account_id, **body})
-    }
+    return {"statusCode": 201, "body": json.dumps({"id": account_id, **body})}
 
 
 def delete_account(event, context):
     account_id = event.get("pathParameters", {}).get("id")
 
-    sql = "DELETE FROM accounts WHERE account_id = :account_id"
-    params = [{"name": "account_id", "value": {"stringValue": account_id}}]
+    sql = "DELETE FROM accounts WHERE account_id = %s"
 
-    execute_sql(sql, params)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (account_id,))
+        conn.commit()
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"id": account_id, "status": "deleted"})
-    }
+    return {"statusCode": 200, "body": json.dumps({"id": account_id, "status": "deleted"})}
 
+
+# ==========================
+# Main handler
+# ==========================
 
 def handler(event, context):
     method = event.get("requestContext", {}).get("http", {}).get("method")

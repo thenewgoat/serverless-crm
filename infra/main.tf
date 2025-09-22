@@ -1,3 +1,6 @@
+#######################################
+# Provider
+#######################################
 provider "aws" {
   region = var.aws_region
 
@@ -11,9 +14,9 @@ provider "aws" {
   }
 }
 
-# =======================
+#######################################
 # VPC
-# =======================
+#######################################
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.0.0"
@@ -29,9 +32,9 @@ module "vpc" {
   single_nat_gateway = false
 }
 
-# =======================
+#######################################
 # Security Groups
-# =======================
+#######################################
 resource "aws_security_group" "lambda" {
   name   = "crm-${var.environment}-lambda-sg"
   vpc_id = module.vpc.vpc_id
@@ -57,9 +60,9 @@ resource "aws_security_group" "db" {
   }
 }
 
-# =======================
+#######################################
 # DB Subnet Group
-# =======================
+#######################################
 resource "aws_db_subnet_group" "aurora" {
   name       = "crm-${var.environment}-aurora"
   subnet_ids = module.vpc.private_subnets
@@ -72,25 +75,26 @@ resource "aws_db_subnet_group" "aurora" {
   }
 }
 
-# =======================
-# Aurora PostgreSQL (Serverless v2 + Data API)
-# =======================
+#######################################
+# Aurora PostgreSQL (Serverless v2, IAM Auth)
+#######################################
 module "aurora" {
   source  = "terraform-aws-modules/rds-aurora/aws"
   version = "8.3.0"
 
-  name            = "crm-${var.environment}-aurora"
-  engine          = "aurora-postgresql"
-  engine_version  = "15.3"
-  database_name   = "crm"
-  master_username = var.db_username
-  master_password = var.db_password
+  name           = "crm-${var.environment}-aurora"
+  engine         = "aurora-postgresql"
+  engine_version = "15.3"
+  database_name  = var.db_name
+
+  manage_master_user_password       = false
+  iam_database_authentication_enabled = true
 
   vpc_id                 = module.vpc.vpc_id
   vpc_security_group_ids = [aws_security_group.db.id]
 
-  db_subnet_group_name  = aws_db_subnet_group.aurora.name
-  subnets                = module.vpc.private_subnets
+  db_subnet_group_name = aws_db_subnet_group.aurora.name
+  subnets              = module.vpc.private_subnets
 
   serverlessv2_scaling_configuration = {
     min_capacity = 0.5
@@ -100,36 +104,53 @@ module "aurora" {
   storage_encrypted   = true
   skip_final_snapshot = true
   deletion_protection = false
-
-  # 🔹 Required for boto3.rds-data
   enable_http_endpoint = true
 
-  depends_on = [
-    module.vpc,               # ensure VPC + subnets are up
-    module.vpc.natgw_ids      # ensure NAT gateways exist
-  ]
+  depends_on = [module.vpc, module.vpc.natgw_ids]
 }
 
-# =======================
-# Secrets Manager for DB creds
-# =======================
-resource "aws_secretsmanager_secret" "db_secret" {
-  name = "crm-${var.environment}-db-credentials"
-}
+#######################################
+# RDS Proxy
+#######################################
+resource "aws_iam_role" "rds_proxy" {
+  name = "rds-proxy-role-${var.environment}"
 
-resource "aws_secretsmanager_secret_version" "db_secret_ver" {
-  secret_id     = aws_secretsmanager_secret.db_secret.id
-  secret_string = jsonencode({
-    username = var.db_username
-    password = var.db_password
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "rds.amazonaws.com" },
+      Action    = "sts:AssumeRole"
+    }]
   })
 }
 
-# =======================
-# IAM Role for Lambdas
-# =======================
+resource "aws_db_proxy" "aurora_proxy" {
+  name                   = "crm-${var.environment}-aurora-proxy"
+  engine_family          = "POSTGRESQL"
+  role_arn               = aws_iam_role.rds_proxy.arn
+  vpc_security_group_ids = [aws_security_group.db.id]
+  vpc_subnet_ids         = module.vpc.private_subnets
+  require_tls            = true
+}
+
+resource "aws_db_proxy_target_group" "default" {
+  db_proxy_name = aws_db_proxy.aurora_proxy.name
+  name          = "default"
+}
+
+resource "aws_db_proxy_target" "aurora_cluster" {
+  db_proxy_name         = aws_db_proxy.aurora_proxy.name
+  target_group_name     = aws_db_proxy_target_group.default.name
+  db_cluster_identifier = module.aurora.cluster_id
+}
+
+#######################################
+# Lambda IAM Role
+#######################################
 resource "aws_iam_role" "lambda_exec" {
   name = "crm-feature2-lambda-role-${var.environment}"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
@@ -145,41 +166,30 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# 🔹 Allow Lambda to call Data API + Secrets Manager
-resource "aws_iam_policy" "lambda_db_policy" {
-  name        = "crm-${var.environment}-lambda-db-policy"
-  description = "Allow Lambda to access Aurora Data API and Secrets Manager"
+# IAM policy to let Lambda connect to DB via IAM
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_policy" "lambda_rds_connect" {
+  name = "lambda-rds-connect-${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "rds-data:ExecuteStatement",
-          "rds-data:BatchExecuteStatement"
-        ],
-        Resource = module.aurora.cluster_arn
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ],
-        Resource = aws_secretsmanager_secret.db_secret.arn
-      }
-    ]
+    Statement = [{
+      Effect   = "Allow",
+      Action   = ["rds-db:connect"],
+      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.aurora.cluster_resource_id}/crmadmin"
+    }]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_db_attach" {
+resource "aws_iam_role_policy_attachment" "lambda_rds_connect_attach" {
   role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_db_policy.arn
+  policy_arn = aws_iam_policy.lambda_rds_connect.arn
 }
 
-# =======================
+#######################################
 # Lambda Packaging
-# =======================
+#######################################
 data "archive_file" "clients" {
   type        = "zip"
   source_dir  = "${path.module}/../lambdas/clients"
@@ -192,9 +202,9 @@ data "archive_file" "accounts" {
   output_path = "${path.module}/../lambdas/accounts.zip"
 }
 
-# =======================
+#######################################
 # Lambda Functions
-# =======================
+#######################################
 resource "aws_lambda_function" "clients" {
   function_name = "crm-clients-${var.environment}"
   handler       = "clients.handler"
@@ -207,9 +217,10 @@ resource "aws_lambda_function" "clients" {
     variables = {
       ENVIRONMENT = var.environment
       REGION      = var.aws_region
-      AURORA_CLUSTER_ARN   = module.aurora.cluster_arn
-      AURORA_SECRET_ARN    = aws_secretsmanager_secret.db_secret.arn
-      DB_NAME              = var.db_name
+      DB_NAME     = var.db_name
+      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
+      DB_PORT     = "5432"
+      DB_USER     = "crmadmin"
     }
   }
 }
@@ -227,15 +238,16 @@ resource "aws_lambda_function" "accounts" {
       ENVIRONMENT = var.environment
       REGION      = var.aws_region
       DB_NAME     = var.db_name
-      DB_ARN      = module.aurora.cluster_arn
-      SECRET_ARN  = aws_secretsmanager_secret.db_secret.arn
+      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
+      DB_PORT     = "5432"
+      DB_USER     = "crmadmin"
     }
-  }
+  } 
 }
 
-# =======================
+#######################################
 # API Gateway
-# =======================
+#######################################
 resource "aws_apigatewayv2_api" "crm_api" {
   name          = "crm-feature2-api-${var.environment}"
   protocol_type = "HTTP"
@@ -306,7 +318,9 @@ resource "aws_apigatewayv2_route" "delete_account" {
   target    = "integrations/${aws_apigatewayv2_integration.accounts.id}"
 }
 
+#######################################
 # Lambda Permissions
+#######################################
 resource "aws_lambda_permission" "allow_clients" {
   statement_id  = "AllowAPIGatewayInvokeClients"
   action        = "lambda:InvokeFunction"
