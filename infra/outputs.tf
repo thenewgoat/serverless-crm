@@ -25,3 +25,20 @@ output "lambda_execution_role_arn" {
   description = "IAM role ARN used by all Lambda functions"
   value       = aws_iam_role.lambda_exec.arn
 }
+
+output "db_endpoint" {
+  value = module.db.db_instance_address
+}
+
+output "vpc_id" {
+  value = module.vpc.vpc_id
+}
+
+
+output "aurora_cluster_arn" {
+  value = module.aurora.cluster_arn
+}
+
+output "aurora_secret_arn" {
+  value = aws_secretsmanager_secret.db_secret.arn
+}

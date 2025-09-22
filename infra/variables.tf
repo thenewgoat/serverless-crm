@@ -8,6 +8,15 @@ variable "environment" {
   default = "dev"
 }
 
+variable "db_username" {
+  default = "crmadmin"
+}
+
+variable "db_password" {
+  default = "SuperSecurePassword123!"
+}
+
+
 # Optional, uncomment when needed
 # variable "db_connection" {}
 # variable "secrets_manager_arn" {}
