@@ -58,6 +58,21 @@ resource "aws_security_group" "db" {
 }
 
 # =======================
+# DB Subnet Group
+# =======================
+resource "aws_db_subnet_group" "aurora" {
+  name       = "crm-${var.environment}-aurora"
+  subnet_ids = module.vpc.private_subnets
+
+  tags = {
+    Name        = "crm-${var.environment}-aurora"
+    Environment = var.environment
+    Project     = "UBS_project"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# =======================
 # Aurora PostgreSQL (Serverless v2 + Data API)
 # =======================
 module "aurora" {
@@ -72,8 +87,10 @@ module "aurora" {
   master_password = var.db_password
 
   vpc_id                 = module.vpc.vpc_id
-  subnets                = module.vpc.private_subnets
   vpc_security_group_ids = [aws_security_group.db.id]
+
+  db_subnet_group_name  = aws_db_subnet_group.aurora.name
+  subnets                = module.vpc.private_subnets
 
   serverlessv2_scaling_configuration = {
     min_capacity = 0.5
@@ -86,7 +103,7 @@ module "aurora" {
 
   # 🔹 Required for boto3.rds-data
   enable_http_endpoint = true
-  
+
   depends_on = [
     module.vpc,               # ensure VPC + subnets are up
     module.vpc.natgw_ids      # ensure NAT gateways exist
