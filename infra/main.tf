@@ -86,6 +86,11 @@ module "aurora" {
 
   # 🔹 Required for boto3.rds-data
   enable_http_endpoint = true
+  
+  depends_on = [
+    module.vpc,               # ensure VPC + subnets are up
+    module.vpc.natgw_ids      # ensure NAT gateways exist
+  ]
 }
 
 # =======================
