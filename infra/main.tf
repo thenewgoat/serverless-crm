@@ -256,25 +256,14 @@ resource "aws_iam_role_policy_attachment" "lambda_secrets_attach" {
 #######################################
 # Lambda Functions
 #######################################
-data "archive_file" "clients" {
-  type        = "zip"
-  source_dir  = "${path.module}/../lambdas/clients"
-  output_path = "${path.module}/../lambdas/clients.zip"
-}
-
-data "archive_file" "accounts" {
-  type        = "zip"
-  source_dir  = "${path.module}/../lambdas/accounts"
-  output_path = "${path.module}/../lambdas/accounts.zip"
-}
 
 resource "aws_lambda_function" "clients" {
   function_name    = "crm-clients-${var.environment}"
   handler          = "clients.handler"
   runtime          = "python3.11"
   role             = aws_iam_role.lambda_exec.arn
-  filename         = data.archive_file.clients.output_path
-  source_code_hash = data.archive_file.clients.output_base64sha256
+  filename         = "${path.module}/../lambdas/clients.zip"
+  source_code_hash = filebase64sha256("${path.module}/../lambdas/clients.zip")
 
   environment {
     variables = {
@@ -293,8 +282,8 @@ resource "aws_lambda_function" "accounts" {
   handler          = "accounts.handler"
   runtime          = "python3.11"
   role             = aws_iam_role.lambda_exec.arn
-  filename         = data.archive_file.accounts.output_path
-  source_code_hash = data.archive_file.accounts.output_base64sha256
+  filename         = "${path.module}/../lambdas/accounts.zip"
+  source_code_hash = filebase64sha256("${path.module}/../lambdas/accounts.zip")
 
   environment {
     variables = {
