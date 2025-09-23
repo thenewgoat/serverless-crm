@@ -1,4 +1,18 @@
 #######################################
+# Backend
+#######################################
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state-crm"    # <-- replace with your bucket
+    key            = "crm/dev/terraform.tfstate" # <-- unique per env
+    region         = "ap-southeast-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
+}
+
+
+#######################################
 # Provider
 #######################################
 provider "aws" {

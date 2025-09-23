@@ -76,9 +76,6 @@ jobs:
       # ==============================
       # Capture Terraform outputs
       # ==============================
-      - name: Destroy Terraform anyway (on success)
-        working-directory: infra
-        run: terraform destroy -auto-approve
 
       - name: Export API URL to JSON
         working-directory: infra
