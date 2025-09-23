@@ -64,7 +64,7 @@ resource "aws_security_group" "db" {
 # Reference Existing Secret (do not create)
 #######################################
 data "aws_secretsmanager_secret" "db" {
-  name = "crm/aurora/db-creds" # <-- existing secret
+  name = "crm-dev-db-credentials"
 }
 
 data "aws_secretsmanager_secret_version" "db" {
