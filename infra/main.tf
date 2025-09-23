@@ -132,16 +132,35 @@ resource "aws_db_proxy" "aurora_proxy" {
   vpc_security_group_ids = [aws_security_group.db.id]
   vpc_subnet_ids         = module.vpc.private_subnets
   require_tls            = true
+  idle_client_timeout    = 1800  # 30 min
+
+  auth {
+    auth_scheme = "IAM"
+    iam_auth    = "REQUIRED"
+    description = "IAM authentication for Lambda <-> Aurora"
+  }
+
+  tags = {
+    Name        = "crm-${var.environment}-aurora-proxy"
+    Environment = var.environment
+    Project     = "UBS_project"
+    ManagedBy   = "Terraform"
+  }
 }
 
-resource "aws_db_proxy_target_group" "default" {
+resource "aws_db_proxy_default_target_group" "aurora" {
   db_proxy_name = aws_db_proxy.aurora_proxy.name
-  name          = "default"
+
+  connection_pool_config {
+    connection_borrow_timeout    = 120   # Wait up to 2 min for a pooled connection
+    max_connections_percent      = 100   # Proxy can use all available DB connections
+    max_idle_connections_percent = 50    # Keep up to 50% idle
+  }
 }
 
 resource "aws_db_proxy_target" "aurora_cluster" {
   db_proxy_name         = aws_db_proxy.aurora_proxy.name
-  target_group_name     = aws_db_proxy_target_group.default.name
+  target_group_name     = aws_db_proxy_default_target_group.aurora.name
   db_cluster_identifier = module.aurora.cluster_id
 }
 
