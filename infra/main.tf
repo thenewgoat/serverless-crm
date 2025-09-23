@@ -98,9 +98,11 @@ module "aurora" {
   engine_version = "15.3"
   database_name  = var.db_name
 
-  # Do not create or manage secrets
   manage_master_user_password         = false
   iam_database_authentication_enabled = true
+
+  master_username = jsondecode(data.aws_secretsmanager_secret_version.db.secret_string)["username"]
+  master_password = jsondecode(data.aws_secretsmanager_secret_version.db.secret_string)["password"]
 
   vpc_id                 = module.vpc.vpc_id
   vpc_security_group_ids = [aws_security_group.db.id]
