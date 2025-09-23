@@ -263,7 +263,6 @@ resource "aws_lambda_function" "clients" {
   runtime          = "python3.11"
   role             = aws_iam_role.lambda_exec.arn
   filename         = "${path.module}/../lambdas/clients.zip"
-  source_code_hash = filebase64sha256("${path.module}/../lambdas/clients.zip")
 
   environment {
     variables = {
@@ -283,7 +282,6 @@ resource "aws_lambda_function" "accounts" {
   runtime          = "python3.11"
   role             = aws_iam_role.lambda_exec.arn
   filename         = "${path.module}/../lambdas/accounts.zip"
-  source_code_hash = filebase64sha256("${path.module}/../lambdas/accounts.zip")
 
   environment {
     variables = {
