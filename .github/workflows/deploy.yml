@@ -51,51 +51,16 @@ jobs:
           zip -r ../../lambdas/accounts.zip ./*  # <-- drop zip into lambdas/
           cd ../..
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.2
-
-      - name: Terraform Init
-        working-directory: infra
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: infra
-        run: terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
-        working-directory: infra
-        run: TF_LOG=DEBUG terraform apply -auto-approve tfplan
-
-      - name: Terraform Destroy (on failure)
-        if: failure() || cancelled()
-        working-directory: infra
-        run: terraform destroy -auto-approve
-      # ==============================
-      # Capture Terraform outputs
-      # ==============================
-
-      - name: Export API URL to JSON
-        working-directory: infra
-        run: terraform output -json > tf_outputs.json
-
-      - name: Show API URL
-        run: cat infra/tf_outputs.json | jq -r .api_url.value
-
-      # ==============================
-      # Write API URL into .env
-      # ==============================
-      - name: Create .env file for frontend
+      - name: Debug packaged files
         run: |
-          API_URL=$(cat infra/tf_outputs.json | jq -r .api_url.value)
-          echo "VITE_API_URL=$API_URL" > .env
-          echo "Generated .env file with API URL: $API_URL"
+          echo "Current working directory: $(pwd)"
+          echo "Listing repo root:"
+          ls -R
+          echo "Listing infra directory:"
+          ls -R infra || true
+          echo "Listing lambdas directory:"
+          ls -R lambdas || true
 
-      - name: Upload .env as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: env-file
-          path: .env
+
+
 
