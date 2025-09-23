@@ -2,13 +2,13 @@ import json
 import os
 import uuid
 import boto3
-import psycopg2
+import pg8000
 from botocore.exceptions import ClientError
 
 # Environment variables from Terraform
 REGION = os.environ["REGION"]
 DB_HOST = os.environ["DB_HOST"]
-DB_PORT = os.environ.get("DB_PORT", "5432")
+DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ["DB_NAME"]
 DB_SECRET_NAME = os.environ["DB_SECRET_NAME"]  # now used for user lookup
 
@@ -27,22 +27,22 @@ def get_db_user():
 
 
 def get_db_connection():
-    """Generate IAM auth token and connect to Aurora via RDS Proxy."""
+    """Generate IAM auth token and connect to Aurora via RDS Proxy using pg8000."""
     db_user = get_db_user()
     token = rds.generate_db_auth_token(
         DBHostname=DB_HOST,
-        Port=int(DB_PORT),
+        Port=DB_PORT,
         DBUsername=db_user,
         Region=REGION,
     )
 
-    return psycopg2.connect(
+    return pg8000.connect(
+        user=db_user,
         host=DB_HOST,
         port=DB_PORT,
-        user=db_user,
-        password=token,
         database=DB_NAME,
-        sslmode="require",
+        password=token,
+        ssl_context=True,
     )
 
 
@@ -60,7 +60,7 @@ def create_account(event, context):
                 account_id, client_id, account_type, status,
                 opening_date, initial_deposit, currency, branch_id
             )
-            VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s, %s)
+            VALUES (:1, :2, :3, :4, CURRENT_DATE, :5, :6, :7)
         """
 
         with get_db_connection() as conn:
@@ -91,7 +91,7 @@ def delete_account(event, context):
         if not account_id:
             return {"statusCode": 400, "body": json.dumps({"error": "Missing account ID"})}
 
-        sql = "DELETE FROM accounts WHERE account_id = %s"
+        sql = "DELETE FROM accounts WHERE account_id = :1"
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:

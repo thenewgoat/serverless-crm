@@ -2,13 +2,13 @@ import json
 import os
 import uuid
 import boto3
-import psycopg2
+import pg8000
 from botocore.exceptions import ClientError
 
 # Environment variables from Terraform
 REGION = os.environ["REGION"]
 DB_HOST = os.environ["DB_HOST"]
-DB_PORT = os.environ.get("DB_PORT", "5432")
+DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ["DB_NAME"]
 DB_SECRET_NAME = os.environ["DB_SECRET_NAME"]
 
@@ -27,22 +27,22 @@ def get_db_user():
 
 
 def get_db_connection():
-    """Generate IAM auth token and connect to Aurora via RDS Proxy."""
+    """Generate IAM auth token and connect to Aurora via RDS Proxy using pg8000."""
     db_user = get_db_user()
     token = rds.generate_db_auth_token(
         DBHostname=DB_HOST,
-        Port=int(DB_PORT),
+        Port=DB_PORT,
         DBUsername=db_user,
         Region=REGION,
     )
 
-    return psycopg2.connect(
+    return pg8000.connect(
+        user=db_user,
         host=DB_HOST,
         port=DB_PORT,
-        user=db_user,
-        password=token,
         database=DB_NAME,
-        sslmode="require",
+        password=token,
+        ssl_context=True,
     )
 
 
@@ -57,7 +57,7 @@ def create_client(event, context):
 
         sql = """
             INSERT INTO clients (client_id, first_name, last_name, email, phone)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (:1, :2, :3, :4, :5)
         """
 
         with get_db_connection() as conn:
@@ -89,7 +89,7 @@ def get_client(event, context):
         sql = """
             SELECT client_id, first_name, last_name, email, phone
             FROM clients
-            WHERE client_id = %s
+            WHERE client_id = :1
         """
 
         with get_db_connection() as conn:
@@ -124,11 +124,11 @@ def update_client(event, context):
 
         sql = """
             UPDATE clients
-            SET first_name = %s,
-                last_name = %s,
-                email = %s,
-                phone = %s
-            WHERE client_id = %s
+            SET first_name = :1,
+                last_name = :2,
+                email = :3,
+                phone = :4
+            WHERE client_id = :5
         """
 
         with get_db_connection() as conn:
@@ -157,7 +157,7 @@ def delete_client(event, context):
         if not client_id:
             return {"statusCode": 400, "body": json.dumps({"error": "Missing client ID"})}
 
-        sql = "DELETE FROM clients WHERE client_id = %s"
+        sql = "DELETE FROM clients WHERE client_id = :1"
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
