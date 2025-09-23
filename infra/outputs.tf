@@ -1,54 +1,37 @@
 # =======================
 # API Gateway
 # =======================
-output "api_url" {
-  description = "Base URL of the CRM Feature 2 API Gateway"
-  value       = aws_apigatewayv2_api.crm_api.api_endpoint
-}
-
 output "api_invoke_url" {
   description = "Full invoke URL of the deployed stage"
   value       = "${aws_apigatewayv2_api.crm_api.api_endpoint}/${aws_apigatewayv2_stage.default.name}"
 }
 
-# =======================
-# Lambda Functions
-# =======================
-output "clients_lambda" {
-  description = "Name of the Clients Lambda function"
-  value       = aws_lambda_function.clients.function_name
-}
-
-output "accounts_lambda" {
-  description = "Name of the Accounts Lambda function"
-  value       = aws_lambda_function.accounts.function_name
+output "api_id" {
+  description = "ID of the API Gateway"
+  value       = aws_apigatewayv2_api.crm_api.id
 }
 
 # =======================
-# IAM
+# Database
 # =======================
-output "lambda_execution_role" {
-  description = "ARN of the IAM role used by Lambda functions"
-  value       = aws_iam_role.lambda_exec.arn
+output "aurora_cluster_endpoint" {
+  description = "Writer endpoint of the Aurora cluster"
+  value       = module.aurora.cluster_endpoint
 }
 
-# =======================
-# Networking
-# =======================
-output "vpc_id" {
-  description = "ID of the created VPC"
-  value       = module.vpc.vpc_id
+output "aurora_reader_endpoint" {
+  description = "Reader endpoint of the Aurora cluster"
+  value       = module.aurora.cluster_reader_endpoint
 }
 
-# =======================
-# Database (Aurora)
-# =======================
-output "aurora_cluster_arn" {
-  description = "ARN of the Aurora PostgreSQL cluster"
-  value       = module.aurora.cluster_arn
+output "aurora_proxy_endpoint" {
+  description = "Endpoint of the Aurora RDS Proxy (for Lambda/app connections)"
+  value       = aws_db_proxy.aurora_proxy.endpoint
 }
 
-output "database_name" {
-  description = "Name of the initial database created in Aurora"
-  value       = var.db_name
+# Only output the secret *name* so devs know which to use.
+# Do NOT output secret ARN (avoid accidental leakage).
+output "db_secret_name" {
+  description = "Name of the existing Secrets Manager secret with DB credentials"
+  value       = data.aws_secretsmanager_secret.db.name
 }

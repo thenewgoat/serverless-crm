@@ -61,6 +61,17 @@ resource "aws_security_group" "db" {
 }
 
 #######################################
+# Reference Existing Secret (do not create)
+#######################################
+data "aws_secretsmanager_secret" "db" {
+  name = "crm/aurora/db-creds" # <-- existing secret
+}
+
+data "aws_secretsmanager_secret_version" "db" {
+  secret_id = data.aws_secretsmanager_secret.db.id
+}
+
+#######################################
 # DB Subnet Group
 #######################################
 resource "aws_db_subnet_group" "aurora" {
@@ -76,7 +87,7 @@ resource "aws_db_subnet_group" "aurora" {
 }
 
 #######################################
-# Aurora PostgreSQL (Serverless v2, IAM Auth)
+# Aurora PostgreSQL (Serverless v2 with IAM Auth)
 #######################################
 module "aurora" {
   source  = "terraform-aws-modules/rds-aurora/aws"
@@ -87,7 +98,8 @@ module "aurora" {
   engine_version = "15.3"
   database_name  = var.db_name
 
-  manage_master_user_password       = false
+  # Do not create or manage secrets
+  manage_master_user_password         = false
   iam_database_authentication_enabled = true
 
   vpc_id                 = module.vpc.vpc_id
@@ -101,9 +113,9 @@ module "aurora" {
     max_capacity = 4
   }
 
-  storage_encrypted   = true
-  skip_final_snapshot = true
-  deletion_protection = false
+  storage_encrypted    = true
+  skip_final_snapshot  = true
+  deletion_protection  = false
   enable_http_endpoint = true
 
   depends_on = [module.vpc, module.vpc.natgw_ids]
@@ -132,12 +144,12 @@ resource "aws_db_proxy" "aurora_proxy" {
   vpc_security_group_ids = [aws_security_group.db.id]
   vpc_subnet_ids         = module.vpc.private_subnets
   require_tls            = true
-  idle_client_timeout    = 1800  # 30 min
+  idle_client_timeout    = 1800
 
   auth {
-    auth_scheme = "IAM"
+    auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
-    description = "IAM authentication for Lambda <-> Aurora"
+    secret_arn  = data.aws_secretsmanager_secret.db.arn
   }
 
   tags = {
@@ -152,9 +164,9 @@ resource "aws_db_proxy_default_target_group" "aurora" {
   db_proxy_name = aws_db_proxy.aurora_proxy.name
 
   connection_pool_config {
-    connection_borrow_timeout    = 120   # Wait up to 2 min for a pooled connection
-    max_connections_percent      = 100   # Proxy can use all available DB connections
-    max_idle_connections_percent = 50    # Keep up to 50% idle
+    connection_borrow_timeout    = 120
+    max_connections_percent      = 100
+    max_idle_connections_percent = 50
   }
 }
 
@@ -206,8 +218,27 @@ resource "aws_iam_role_policy_attachment" "lambda_rds_connect_attach" {
   policy_arn = aws_iam_policy.lambda_rds_connect.arn
 }
 
+# IAM policy to let Lambda read only this specific secret
+resource "aws_iam_policy" "lambda_secrets_access" {
+  name = "lambda-secrets-access-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect   = "Allow",
+      Action   = ["secretsmanager:GetSecretValue"],
+      Resource = data.aws_secretsmanager_secret.db.arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_secrets_attach" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.lambda_secrets_access.arn
+}
+
 #######################################
-# Lambda Packaging
+# Lambda Functions
 #######################################
 data "archive_file" "clients" {
   type        = "zip"
@@ -221,51 +252,48 @@ data "archive_file" "accounts" {
   output_path = "${path.module}/../lambdas/accounts.zip"
 }
 
-#######################################
-# Lambda Functions
-#######################################
 resource "aws_lambda_function" "clients" {
-  function_name = "crm-clients-${var.environment}"
-  handler       = "clients.handler"
-  runtime       = "python3.11"
-  role          = aws_iam_role.lambda_exec.arn
+  function_name    = "crm-clients-${var.environment}"
+  handler          = "clients.handler"
+  runtime          = "python3.11"
+  role             = aws_iam_role.lambda_exec.arn
   filename         = data.archive_file.clients.output_path
   source_code_hash = data.archive_file.clients.output_base64sha256
 
   environment {
     variables = {
-      ENVIRONMENT = var.environment
-      REGION      = var.aws_region
-      DB_NAME     = var.db_name
-      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
-      DB_PORT     = "5432"
-      DB_USER     = "crmadmin"
+      ENVIRONMENT    = var.environment
+      REGION         = var.aws_region
+      DB_NAME        = var.db_name
+      DB_HOST        = aws_db_proxy.aurora_proxy.endpoint
+      DB_PORT        = "5432"
+      DB_SECRET_NAME = data.aws_secretsmanager_secret.db.name
     }
   }
 }
 
 resource "aws_lambda_function" "accounts" {
-  function_name = "crm-accounts-${var.environment}"
-  handler       = "accounts.handler"
-  runtime       = "python3.11"
-  role          = aws_iam_role.lambda_exec.arn
+  function_name    = "crm-accounts-${var.environment}"
+  handler          = "accounts.handler"
+  runtime          = "python3.11"
+  role             = aws_iam_role.lambda_exec.arn
   filename         = data.archive_file.accounts.output_path
   source_code_hash = data.archive_file.accounts.output_base64sha256
 
   environment {
     variables = {
-      ENVIRONMENT = var.environment
-      REGION      = var.aws_region
-      DB_NAME     = var.db_name
-      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
-      DB_PORT     = "5432"
-      DB_USER     = "crmadmin"
+      ENVIRONMENT    = var.environment
+      REGION         = var.aws_region
+      DB_NAME        = var.db_name
+      DB_HOST        = aws_db_proxy.aurora_proxy.endpoint
+      DB_PORT        = "5432"
+      DB_SECRET_NAME = data.aws_secretsmanager_secret.db.name
     }
-  } 
+  }
 }
 
 #######################################
-# API Gateway
+# API Gateway (unchanged, included for completeness)
 #######################################
 resource "aws_apigatewayv2_api" "crm_api" {
   name          = "crm-feature2-api-${var.environment}"
@@ -284,7 +312,6 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 }
 
-# Integrations
 resource "aws_apigatewayv2_integration" "clients" {
   api_id                 = aws_apigatewayv2_api.crm_api.id
   integration_type       = "AWS_PROXY"
@@ -299,7 +326,7 @@ resource "aws_apigatewayv2_integration" "accounts" {
   payload_format_version = "2.0"
 }
 
-# Routes (Clients)
+# Routes
 resource "aws_apigatewayv2_route" "create_client" {
   api_id    = aws_apigatewayv2_api.crm_api.id
   route_key = "POST /api/clients"
@@ -324,7 +351,6 @@ resource "aws_apigatewayv2_route" "delete_client" {
   target    = "integrations/${aws_apigatewayv2_integration.clients.id}"
 }
 
-# Routes (Accounts)
 resource "aws_apigatewayv2_route" "create_account" {
   api_id    = aws_apigatewayv2_api.crm_api.id
   route_key = "POST /api/accounts"

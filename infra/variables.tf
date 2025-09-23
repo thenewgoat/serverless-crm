@@ -1,11 +1,13 @@
 variable "aws_region" {
-  type    = string
-  default = "ap-southeast-1"
+  description = "AWS region for deployment"
+  type        = string
+  default     = "ap-southeast-1"
 }
 
 variable "environment" {
-  type    = string
-  default = "dev"
+  description = "Deployment environment (e.g., dev, staging, prod)"
+  type        = string
+  default     = "dev"
 }
 
 variable "db_name" {
@@ -14,6 +16,11 @@ variable "db_name" {
   default     = "crm"
 }
 
+variable "db_secret_name" {
+  description = "Name of the existing Secrets Manager secret containing Aurora DB credentials"
+  type        = string
+  default     = "crm/aurora/db-creds"
+}
 
 # Optional, uncomment when needed
 # variable "db_connection" {}

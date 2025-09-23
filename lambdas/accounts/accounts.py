@@ -3,35 +3,47 @@ import os
 import uuid
 import boto3
 import psycopg2
+from botocore.exceptions import ClientError
 
 # Environment variables from Terraform
 REGION = os.environ["REGION"]
 DB_HOST = os.environ["DB_HOST"]
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ["DB_NAME"]
-DB_USER = os.environ["DB_USER"]
+DB_SECRET_NAME = os.environ["DB_SECRET_NAME"]  # now used for user lookup
 
 rds = boto3.client("rds")
+secretsmanager = boto3.client("secretsmanager")
+
+
+def get_db_user():
+    """Fetch DB user from Secrets Manager instead of hardcoding in env."""
+    try:
+        resp = secretsmanager.get_secret_value(SecretId=DB_SECRET_NAME)
+        secret = json.loads(resp["SecretString"])
+        return secret["username"]
+    except ClientError as e:
+        raise RuntimeError(f"Failed to retrieve DB user from Secrets Manager: {e}")
 
 
 def get_db_connection():
     """Generate IAM auth token and connect to Aurora via RDS Proxy."""
+    db_user = get_db_user()
     token = rds.generate_db_auth_token(
         DBHostname=DB_HOST,
         Port=int(DB_PORT),
-        DBUsername=DB_USER,
+        DBUsername=db_user,
         Region=REGION,
     )
 
-    conn = psycopg2.connect(
+    return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,
-        user=DB_USER,
+        user=db_user,
         password=token,
         database=DB_NAME,
         sslmode="require",
     )
-    return conn
 
 
 # ==========================
@@ -39,47 +51,57 @@ def get_db_connection():
 # ==========================
 
 def create_account(event, context):
-    body = json.loads(event.get("body", "{}"))
-    account_id = str(uuid.uuid4())
+    try:
+        body = json.loads(event.get("body", "{}"))
+        account_id = str(uuid.uuid4())
 
-    sql = """
-        INSERT INTO accounts (
-            account_id, client_id, account_type, status,
-            opening_date, initial_deposit, currency, branch_id
-        )
-        VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s, %s)
-    """
-
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                sql,
-                (
-                    account_id,
-                    body.get("clientId"),
-                    body.get("accountType", "Savings"),
-                    "Active",
-                    float(body.get("initialDeposit", 0)),
-                    body.get("currency", "SGD"),
-                    body.get("branchId", "MAIN"),
-                ),
+        sql = """
+            INSERT INTO accounts (
+                account_id, client_id, account_type, status,
+                opening_date, initial_deposit, currency, branch_id
             )
-        conn.commit()
+            VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s, %s)
+        """
 
-    return {"statusCode": 201, "body": json.dumps({"id": account_id, **body})}
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    sql,
+                    (
+                        account_id,
+                        body.get("clientId"),
+                        body.get("accountType", "Savings"),
+                        "Active",
+                        float(body.get("initialDeposit", 0)),
+                        body.get("currency", "SGD"),
+                        body.get("branchId", "MAIN"),
+                    ),
+                )
+            conn.commit()
+
+        return {"statusCode": 201, "body": json.dumps({"id": account_id, **body})}
+
+    except Exception as e:
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
 
 def delete_account(event, context):
-    account_id = event.get("pathParameters", {}).get("id")
+    try:
+        account_id = event.get("pathParameters", {}).get("id")
+        if not account_id:
+            return {"statusCode": 400, "body": json.dumps({"error": "Missing account ID"})}
 
-    sql = "DELETE FROM accounts WHERE account_id = %s"
+        sql = "DELETE FROM accounts WHERE account_id = %s"
 
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (account_id,))
-        conn.commit()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (account_id,))
+            conn.commit()
 
-    return {"statusCode": 200, "body": json.dumps({"id": account_id, "status": "deleted"})}
+        return {"statusCode": 200, "body": json.dumps({"id": account_id, "status": "deleted"})}
+
+    except Exception as e:
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
 
 # ==========================
