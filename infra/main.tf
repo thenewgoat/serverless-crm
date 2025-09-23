@@ -131,6 +131,8 @@ module "aurora" {
   manage_master_user_password         = true
   iam_database_authentication_enabled = true
 
+  master_username             = var.db_user
+
   vpc_id                 = module.vpc.vpc_id
   vpc_security_group_ids = [aws_security_group.aurora.id]
 

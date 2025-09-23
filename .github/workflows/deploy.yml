@@ -67,7 +67,7 @@ jobs:
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
         working-directory: infra
-        run: TF_LOG=DEBUG terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve tfplan #TF_LOG=DEBUG terraform apply -auto-approve tfplan
 
       - name: Terraform Destroy (on failure)
         if: failure() || cancelled()
