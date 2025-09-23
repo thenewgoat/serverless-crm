@@ -3,41 +3,28 @@ import os
 import uuid
 import boto3
 import pg8000
-from botocore.exceptions import ClientError
 
 # Environment variables from Terraform
 REGION = os.environ["REGION"]
 DB_HOST = os.environ["DB_HOST"]
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ["DB_NAME"]
-DB_SECRET_NAME = os.environ["DB_SECRET_NAME"]  # now used for user lookup
+DB_USER = os.environ["DB_USER"]
 
 rds = boto3.client("rds")
-secretsmanager = boto3.client("secretsmanager")
-
-
-def get_db_user():
-    """Fetch DB user from Secrets Manager instead of hardcoding in env."""
-    try:
-        resp = secretsmanager.get_secret_value(SecretId=DB_SECRET_NAME)
-        secret = json.loads(resp["SecretString"])
-        return secret["username"]
-    except ClientError as e:
-        raise RuntimeError(f"Failed to retrieve DB user from Secrets Manager: {e}")
 
 
 def get_db_connection():
     """Generate IAM auth token and connect to Aurora via RDS Proxy using pg8000."""
-    db_user = get_db_user()
     token = rds.generate_db_auth_token(
         DBHostname=DB_HOST,
         Port=DB_PORT,
-        DBUsername=db_user,
+        DBUsername=DB_USER,
         Region=REGION,
     )
 
     return pg8000.connect(
-        user=db_user,
+        user=DB_USER,
         host=DB_HOST,
         port=DB_PORT,
         database=DB_NAME,

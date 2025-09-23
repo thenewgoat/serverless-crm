@@ -151,6 +151,13 @@ module "aurora" {
 }
 
 #######################################
+# Reference Existing Secret (Proxy needs this)
+#######################################
+data "aws_secretsmanager_secret" "db" {
+  name = "crm-dev-db-credentials" # <-- must match your existing secret
+}
+
+#######################################
 # RDS Proxy
 #######################################
 resource "aws_iam_role" "rds_proxy" {
@@ -176,8 +183,9 @@ resource "aws_db_proxy" "aurora_proxy" {
   idle_client_timeout    = 1800
 
   auth {
-    auth_scheme = "IAM"
+    auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
+    secret_arn  = data.aws_secretsmanager_secret.db.arn
   }
 
   tags = {
@@ -202,6 +210,24 @@ resource "aws_db_proxy_target" "aurora_cluster" {
   db_proxy_name         = aws_db_proxy.aurora_proxy.name
   target_group_name     = aws_db_proxy_default_target_group.aurora.name
   db_cluster_identifier = module.aurora.cluster_id
+}
+
+#######################################
+# VPC Endpoint for Secrets Manager
+#######################################
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id            = module.vpc.vpc_id
+  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager"
+  vpc_endpoint_type = "Interface"
+  subnet_ids        = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.lambda.id]
+
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "crm-${var.environment}-secretsmanager-endpoint"
+    Environment = var.environment
+  }
 }
 
 #######################################

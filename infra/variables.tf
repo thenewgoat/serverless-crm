@@ -22,6 +22,13 @@ variable "db_secret_name" {
   default     = "crm/aurora/db-creds"
 }
 
+variable "db_user" {
+  description = "Database user for IAM authentication"
+  type        = string
+  default     = "crmadmin"  # or whatever your Aurora user is
+}
+
+
 # Optional, uncomment when needed
 # variable "db_connection" {}
 # variable "secrets_manager_arn" {}
