@@ -35,21 +35,21 @@ jobs:
 
       - name: Package Clients & Accounts Lambdas
         run: |
-            # -------- Clients --------
-            mkdir -p build/clients
-            cp lambdas/clients/clients.py build/clients/
-            pip install -r lambdas/clients/requirements.txt -t build/clients/
-            cd build/clients
-            zip -r ../../infra/clients.zip ./*
-            cd ../..
+          # -------- Clients --------
+          mkdir -p build/clients
+          cp lambdas/clients/clients.py build/clients/
+          pip install -r lambdas/clients/requirements.txt -t build/clients/
+          cd build/clients
+          zip -r ../../lambdas/clients.zip ./*   # <-- drop zip into lambdas/
+          cd ../..
 
-            # -------- Accounts --------
-            mkdir -p build/accounts
-            cp lambdas/accounts/accounts.py build/accounts/
-            pip install -r lambdas/accounts/requirements.txt -t build/accounts/
-            cd build/accounts
-            zip -r ../../infra/accounts.zip ./*
-            cd ../..
+          # -------- Accounts --------
+          mkdir -p build/accounts
+          cp lambdas/accounts/accounts.py build/accounts/
+          pip install -r lambdas/accounts/requirements.txt -t build/accounts/
+          cd build/accounts
+          zip -r ../../lambdas/accounts.zip ./*  # <-- drop zip into lambdas/
+          cd ../..
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
