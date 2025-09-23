@@ -40,7 +40,7 @@ jobs:
             cp lambdas/clients/clients.py build/clients/
             pip install -r lambdas/clients/requirements.txt -t build/clients/
             cd build/clients
-            zip -r ../../infra/clients.zip .
+            zip -r ../../infra/clients.zip ./*
             cd ../..
 
             # -------- Accounts --------
@@ -48,7 +48,7 @@ jobs:
             cp lambdas/accounts/accounts.py build/accounts/
             pip install -r lambdas/accounts/requirements.txt -t build/accounts/
             cd build/accounts
-            zip -r ../../infra/accounts.zip .
+            zip -r ../../infra/accounts.zip ./*
             cd ../..
 
       - name: Setup Terraform
@@ -76,6 +76,10 @@ jobs:
       # ==============================
       # Capture Terraform outputs
       # ==============================
+      - name: Destroy Terraform anyway (on success)
+        working-directory: infra
+        run: terraform destroy -auto-approve
+
       - name: Export API URL to JSON
         working-directory: infra
         run: terraform output -json > tf_outputs.json
