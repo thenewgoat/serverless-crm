@@ -119,9 +119,6 @@ resource "aws_db_subnet_group" "aurora" {
 #######################################
 # Aurora PostgreSQL (Serverless v2 with IAM Auth)
 #######################################
-#######################################
-# Aurora PostgreSQL (Serverless v2 with IAM Auth)
-#######################################
 module "aurora" {
   source  = "terraform-aws-modules/rds-aurora/aws"
   version = "8.3.0"
@@ -203,7 +200,7 @@ resource "aws_db_proxy" "aurora_proxy" {
   auth {
     auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
-    secret_arn  = module.aurora.master_user_secret_arn
+    secret_arn  = module.aurora.cluster_master_user_secret[0].secret_arn
   }
 
   tags = {
