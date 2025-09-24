@@ -29,8 +29,16 @@ output "aurora_proxy_endpoint" {
   value       = aws_db_proxy.aurora_proxy.endpoint
 }
 
-# Only output the secret *name* so devs know which to use.
-# Do NOT output secret ARN (avoid accidental leakage).
+output "aurora_cluster_arn" {
+  description = "ARN of the Aurora cluster (for Data API migrations)"
+  value       = module.aurora.cluster_arn
+}
+
+output "aurora_secret_arn" {
+  description = "ARN of the Aurora Secrets Manager secret (for Data API migrations)"
+  value       = aws_secretsmanager_secret.aurora.arn
+}
+
 output "db_secret_name" {
   description = "Name of the existing Secrets Manager secret with DB credentials"
   value       = data.aws_secretsmanager_secret.db.name
