@@ -119,6 +119,9 @@ resource "aws_db_subnet_group" "aurora" {
 #######################################
 # Aurora PostgreSQL (Serverless v2 with IAM Auth)
 #######################################
+#######################################
+# Aurora PostgreSQL (Serverless v2 with IAM Auth)
+#######################################
 module "aurora" {
   source  = "terraform-aws-modules/rds-aurora/aws"
   version = "8.3.0"
@@ -130,8 +133,7 @@ module "aurora" {
 
   manage_master_user_password         = true
   iam_database_authentication_enabled = true
-
-  master_username             = var.db_user
+  master_username                     = var.db_user
 
   vpc_id                 = module.vpc.vpc_id
   vpc_security_group_ids = [aws_security_group.aurora.id]
@@ -148,6 +150,20 @@ module "aurora" {
   skip_final_snapshot  = true
   deletion_protection  = false
   enable_http_endpoint = true
+
+  instance_class = "db.serverless"
+  instances = {
+    writer = {
+      identifier          = "crm-${var.environment}-aurora-writer"
+      publicly_accessible = false
+      availability_zone   = "${var.aws_region}a"
+    }
+    reader = {
+      identifier          = "crm-${var.environment}-aurora-reader"
+      publicly_accessible = false
+      availability_zone   = "${var.aws_region}b"
+    }
+  }
 
   depends_on = [module.vpc]
 }
