@@ -298,8 +298,8 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 data "aws_caller_identity" "current" {}
 
-data "aws_db_proxy" "aurora_proxy" {
-  name = aws_db_proxy.aurora_proxy.name
+locals {
+  rds_proxy_id = regex("prx-[a-zA-Z0-9]+", aws_db_proxy.aurora_proxy.arn)
 }
 
 resource "aws_iam_policy" "lambda_rds_connect" {
@@ -310,7 +310,7 @@ resource "aws_iam_policy" "lambda_rds_connect" {
     Statement = [{
       Effect   = "Allow",
       Action   = ["rds-db:connect"],
-      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${data.aws_db_proxy.aurora_proxy.db_proxy_resource_id}/${var.db_user}"
+      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${local.rds_proxy_id}/${var.db_user}"
     }]
   })
 }
