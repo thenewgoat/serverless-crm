@@ -224,12 +224,6 @@ resource "aws_db_proxy" "aurora_proxy" {
   auth {
     auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
-    # no secret_arn → acts as IAM-only
-  }
-
-  auth {
-    auth_scheme = "SECRETS"
-    iam_auth    = "DISABLED"
     secret_arn  = module.aurora.cluster_master_user_secret[0].secret_arn
   }
 
