@@ -37,11 +37,11 @@ jobs:
         run: |
           CLUSTER_ARN=$(jq -r .aurora_cluster_arn.value infra/tf_outputs.json)
           SECRET_ARN=$(jq -r .aurora_secret_arn.value infra/tf_outputs.json)
+          DB_HOST=$(jq -r .aurora_proxy_endpoint.value infra/tf_outputs.json)
 
-          echo "Using Cluster ARN: $CLUSTER_ARN"
+          echo "Using Proxy endpoint: $DB_HOST"
           echo "Using Secret ARN: $SECRET_ARN"
 
-          # Get actual secret JSON for debugging/logging
           SECRET_JSON=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ARN" \
             --query SecretString --output text)
@@ -49,19 +49,14 @@ jobs:
           DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
           DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
 
-          echo "Fetched DB user: $DB_USER"
-          # Don’t echo password for security!
-          echo "Fetched DB password: $DB_PASS"
-
-          # Export for later steps
-          echo "CLUSTER_ARN=$CLUSTER_ARN" >> $GITHUB_ENV
-          echo "SECRET_ARN=$SECRET_ARN" >> $GITHUB_ENV
+          echo "DB_HOST=$DB_HOST" >> $GITHUB_ENV
           echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+          echo "DB_PASS=$DB_PASS" >> $GITHUB_ENV
 
-      - name: Run schema migrations on Aurora
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Run schema migrations
         run: |
-          aws rds-data execute-statement \
-            --resource-arn "$CLUSTER_ARN" \
-            --secret-arn "$SECRET_ARN" \
-            --database crm \
-            --sql "$(< db/schema.sql)"
+          export PGPASSWORD="$(echo "$SECRET_JSON" | jq -r .password)"
+          psql "host=$DB_HOST port=5432 dbname=crm user=$DB_USER sslmode=require" -f db/schema.sql
