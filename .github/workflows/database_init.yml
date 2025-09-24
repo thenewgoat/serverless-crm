@@ -51,7 +51,7 @@ jobs:
 
           echo "Fetched DB user: $DB_USER"
           # Don’t echo password for security!
-          echo "Fetched DB password: $DB_PASS"
+          # echo "Fetched DB password: $DB_PASS"
 
           # Export for later steps
           echo "CLUSTER_ARN=$CLUSTER_ARN" >> $GITHUB_ENV
