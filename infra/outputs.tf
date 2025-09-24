@@ -36,7 +36,7 @@ output "aurora_cluster_arn" {
 
 output "aurora_secret_arn" {
   description = "ARN of the Aurora Secrets Manager secret (for Data API migrations)"
-  value       = aws_secretsmanager_secret.aurora.arn
+  value       = data.aws_secretsmanager_secret.db.arn
 }
 
 output "db_secret_name" {
