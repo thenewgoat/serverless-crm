@@ -37,3 +37,29 @@ CREATE TABLE IF NOT EXISTS accounts (
     currency     VARCHAR(10) NOT NULL,
     branch_id    VARCHAR(20) NOT NULL
 );
+
+-- Verification: list out key objects
+SELECT 'Current DB:' AS label, current_database()
+UNION ALL
+SELECT 'Current User:', current_user
+UNION ALL
+SELECT 'Current Schema:', current_schema();
+
+-- Verify that tables exist
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN ('clients', 'accounts')
+ORDER BY table_name;
+
+-- Show columns for clients table
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'clients'
+ORDER BY ordinal_position;
+
+-- Show columns for accounts table
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'accounts'
+ORDER BY ordinal_position;
