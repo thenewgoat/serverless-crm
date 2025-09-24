@@ -60,12 +60,8 @@ jobs:
 
       - name: Run schema migrations on Aurora
         run: |
-          awk 'BEGIN{RS=";";} {gsub(/\n/, " "); if (length($0) > 5) print $0";"}' db/schema.sql |
-          while IFS= read -r stmt; do
-            echo "Running: $stmt"
-            aws rds-data execute-statement \
-              --resource-arn "$CLUSTER_ARN" \
-              --secret-arn "$SECRET_ARN" \
-              --database crm \
-              --sql "$stmt"
-          done
+          aws rds-data execute-statement \
+            --resource-arn "$CLUSTER_ARN" \
+            --secret-arn "$SECRET_ARN" \
+            --database crm \
+            --sql "$(< db/schema.sql)"
