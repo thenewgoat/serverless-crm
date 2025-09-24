@@ -6,6 +6,9 @@ on:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # for OIDC
+      contents: read 
 
     steps:
       - name: Checkout repo
