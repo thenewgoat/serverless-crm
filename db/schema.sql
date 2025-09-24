@@ -1,3 +1,5 @@
+SELECT current_database(), current_user, current_schema();
+
 -- Create crmadmin role if it doesn't exist
 CREATE ROLE crmadmin LOGIN;
 -- Ignore error if already exists
