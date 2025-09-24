@@ -48,13 +48,7 @@ jobs:
 
           DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
           DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
-          set -euo pipefail
-          DB_NAME=$(terraform console <<< 'var.db_name' | tr -d '"')
-          if [ -z "$DB_NAME" ] || [ "$DB_NAME" = "null" ]; then
-            echo "Could not resolve var.db_name" >&2
-            exit 1
-          fi
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          DB_NAME="crm"
 
           echo "Fetched DB user: $DB_USER"
           # Don’t echo password for security!

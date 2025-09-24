@@ -38,3 +38,7 @@ output "aurora_secret_arn" {
   description = "ARN of the Aurora Secrets Manager secret (for Data API migrations)"
   value       = module.aurora.cluster_master_user_secret[0].secret_arn
 }
+
+output "db_name" {
+  value = var.db_name
+}
