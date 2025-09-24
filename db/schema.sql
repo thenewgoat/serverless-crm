@@ -1,10 +1,18 @@
 SELECT current_database(), current_user, current_schema();
 
--- Ensure the crmadmin role has rds_iam granted;
-GRANT rds_iam TO crmadmin;
+GRANT rds_iam TO :"DB_USER";
 
--- Enable pgcrypto extension for UUID generation;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+GRANT CONNECT ON DATABASE :"DB_NAME" TO :"DB_USER";
+GRANT USAGE ON SCHEMA public TO :"DB_USER";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"DB_USER";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"DB_USER";
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"DB_USER";
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"DB_USER";
+
 
 -- Clients table;
 CREATE TABLE IF NOT EXISTS clients (

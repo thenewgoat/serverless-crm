@@ -48,6 +48,7 @@ jobs:
 
           DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
           DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+          DB
 
           echo "Fetched DB user: $DB_USER"
           # Don’t echo password for security!
@@ -60,12 +61,19 @@ jobs:
 
       - name: Run schema migrations on Aurora
         run: |
-          awk 'BEGIN{RS=";";} {gsub(/\n/, " "); if (length($0) > 5) print $0";"}' db/schema.sql |
+          DB_NAME=$(jq -r .db_name.value infra/tf_outputs.json)
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+
+          # Replace placeholders like :DB_NAME and :DB_USER in SQL file
+          envsubst < db/schema.sql > db/rendered_schema.sql
+
+          awk 'BEGIN{RS=";";} {gsub(/\n/, " "); if (length($0) > 5) print $0";"}' db/rendered_schema.sql |
           while IFS= read -r stmt; do
             echo "Running: $stmt"
             aws rds-data execute-statement \
               --resource-arn "$CLUSTER_ARN" \
               --secret-arn "$SECRET_ARN" \
-              --database crm \
+              --database "$DB_NAME" \
               --sql "$stmt"
           done
+

@@ -130,7 +130,7 @@ module "aurora" {
 
   manage_master_user_password         = true
   iam_database_authentication_enabled = true
-  master_username                     = var.db_user
+  master_username                     = "master_${var.db_name}"
 
   vpc_id                 = module.vpc.vpc_id
   vpc_security_group_ids = [aws_security_group.aurora.id]
@@ -188,6 +188,30 @@ resource "aws_iam_role" "rds_proxy" {
   })
 }
 
+resource "aws_iam_policy" "rds_proxy_secrets" {
+  name = "rds-proxy-secrets-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "secretsmanager:GetSecretValue"
+        ],
+        Resource = module.aurora.cluster_master_user_secret[0].secret_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "rds_proxy_secrets_attach" {
+  role       = aws_iam_role.rds_proxy.name
+  policy_arn = aws_iam_policy.rds_proxy_secrets.arn
+}
+
+
+
 resource "aws_db_proxy" "aurora_proxy" {
   name                   = "crm-${var.environment}-aurora-proxy"
   engine_family          = "POSTGRESQL"
@@ -200,6 +224,12 @@ resource "aws_db_proxy" "aurora_proxy" {
   auth {
     auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
+    # no secret_arn → acts as IAM-only
+  }
+
+  auth {
+    auth_scheme = "SECRETS"
+    iam_auth    = "DISABLED"
     secret_arn  = module.aurora.cluster_master_user_secret[0].secret_arn
   }
 
@@ -276,7 +306,7 @@ resource "aws_iam_policy" "lambda_rds_connect" {
     Statement = [{
       Effect   = "Allow",
       Action   = ["rds-db:connect"],
-      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.aurora.cluster_resource_id}/${var.db_user}"
+      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_proxy.aurora_proxy.db_proxy_resource_id}/${var.db_user}"
     }]
   })
 }
