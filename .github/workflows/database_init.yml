@@ -33,7 +33,7 @@ jobs:
         working-directory: infra
         run: terraform output -json > tf_outputs.json
 
-      - name: Run schema migrations on Aurora
+      - name: Fetch Aurora secret from Secrets Manager
         run: |
           CLUSTER_ARN=$(jq -r .aurora_cluster_arn.value infra/tf_outputs.json)
           SECRET_ARN=$(jq -r .aurora_secret_arn.value infra/tf_outputs.json)
@@ -41,6 +41,24 @@ jobs:
           echo "Using Cluster ARN: $CLUSTER_ARN"
           echo "Using Secret ARN: $SECRET_ARN"
 
+          # Get actual secret JSON for debugging/logging
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ARN" \
+            --query SecretString --output text)
+
+          DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
+          DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+
+          echo "Fetched DB user: $DB_USER"
+          # Don’t echo password for security!
+
+          # Export for later steps
+          echo "CLUSTER_ARN=$CLUSTER_ARN" >> $GITHUB_ENV
+          echo "SECRET_ARN=$SECRET_ARN" >> $GITHUB_ENV
+          echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+
+      - name: Run schema migrations on Aurora
+        run: |
           awk 'BEGIN{RS=";";} {gsub(/\n/, " "); if (length($0) > 5) print $0";"}' db/schema.sql |
           while IFS= read -r stmt; do
             echo "Running: $stmt"
