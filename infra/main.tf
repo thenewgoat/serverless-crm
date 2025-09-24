@@ -203,7 +203,7 @@ resource "aws_db_proxy" "aurora_proxy" {
   auth {
     auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
-    secret_arn  = data.aws_secretsmanager_secret.db.arn
+    secret_arn  = module.aurora.master_user_secret_arn
   }
 
   tags = {

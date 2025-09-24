@@ -38,8 +38,3 @@ output "aurora_secret_arn" {
   description = "ARN of the Aurora Secrets Manager secret (for Data API migrations)"
   value       = module.aurora.master_user_secret_arn
 }
-
-output "db_secret_name" {
-  description = "Name of the existing Secrets Manager secret with DB credentials"
-  value       = data.aws_secretsmanager_secret.db.name
-}
