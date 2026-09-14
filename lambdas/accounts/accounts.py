@@ -1,42 +1,43 @@
-import json
 import os
+import json
 import uuid
 import boto3
-import pg8000
+import psycopg2
+import logging
+import jwt  # PyJWT needed in your deployment package
 
-# Environment variables from Terraform
-REGION = os.environ["REGION"]
-DB_HOST = os.environ["DB_HOST"]
-DB_PORT = int(os.environ.get("DB_PORT", "5432"))
-DB_NAME = os.environ["DB_NAME"]
-DB_USER = os.environ["DB_USER"]
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-rds = boto3.client("rds")
+# ==========================
+# Environment & Secrets
+# ==========================
+DB_HOST = os.environ["DB_HOST"]   # RDS Proxy endpoint
+DB_NAME = os.environ.get("DB_NAME", "client_account_db_test")
+DB_PORT = int(os.environ.get("DB_PORT", 5432))
+SECRET_ARN = os.environ["SECRET_ARN"]
+
+sm = boto3.client("secretsmanager")
+secret_value = sm.get_secret_value(SecretId=SECRET_ARN)
+SECRET = json.loads(secret_value["SecretString"])
+logger.info(f"Retrieved secret {SECRET_ARN}")
 
 
 def get_db_connection():
-    """Generate IAM auth token and connect to Aurora via RDS Proxy using pg8000."""
-    token = rds.generate_db_auth_token(
-        DBHostname=DB_HOST,
-        Port=DB_PORT,
-        DBUsername=DB_USER,
-        Region=REGION,
-    )
-
-    return pg8000.connect(
-        user=DB_USER,
+    """Connect to Aurora via RDS Proxy using psycopg2 + Secrets Manager creds."""
+    return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,
-        database=DB_NAME,
-        password=token,
-        ssl_context=True,
+        dbname=DB_NAME,
+        user=SECRET["username"],
+        password=SECRET["password"],
+        connect_timeout=5,
     )
 
 
 # ==========================
-# CRUD Operations
+# CRUD Operations (Accounts)
 # ==========================
-
 def create_account(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
@@ -47,7 +48,7 @@ def create_account(event, context):
                 account_id, client_id, account_type, status,
                 opening_date, initial_deposit, currency, branch_id
             )
-            VALUES (:1, :2, :3, :4, CURRENT_DATE, :5, :6, :7)
+            VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s, %s)
         """
 
         with get_db_connection() as conn:
@@ -69,6 +70,7 @@ def create_account(event, context):
         return {"statusCode": 201, "body": json.dumps({"id": account_id, **body})}
 
     except Exception as e:
+        logger.error(f"Create account failed: {e}")
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
 
@@ -78,7 +80,7 @@ def delete_account(event, context):
         if not account_id:
             return {"statusCode": 400, "body": json.dumps({"error": "Missing account ID"})}
 
-        sql = "DELETE FROM accounts WHERE account_id = :1"
+        sql = "DELETE FROM accounts WHERE account_id = %s"
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -88,14 +90,82 @@ def delete_account(event, context):
         return {"statusCode": 200, "body": json.dumps({"id": account_id, "status": "deleted"})}
 
     except Exception as e:
+        logger.error(f"Delete account failed: {e}")
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
 
 # ==========================
-# Main handler
+# Router (main handler) — with Cognito JWT group authorization
 # ==========================
+cognito = boto3.client("cognito-idp")
 
-def handler(event, context):
+def lambda_handler(event, context):
+    cors_headers = {
+        'Access-Control-Allow-Origin': os.environ.get('ALLOWED_ORIGIN', '*'),
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+    }
+
+    # Handle CORS preflight
+    if event.get('httpMethod', '') == 'OPTIONS':
+        return {"statusCode": 200, "headers": cors_headers, "body": ""}
+
+    # --- AUTHENTICATION & GROUP CHECK START ---
+    auth_header = event.get('headers', {}).get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return {
+            "statusCode": 401,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "Unauthorized: Missing or invalid Authorization header"}),
+        }
+    token = auth_header.split(' ')[1]
+
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        groups = decoded.get("cognito:groups", [])
+        username = decoded.get("username")
+    except Exception:
+        return {
+            "statusCode": 401,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "Unauthorized: Invalid token"}),
+        }
+
+    user_pool_id = os.environ.get("COGNITO_USER_POOL_ID")
+    if not user_pool_id:
+        return {
+            "statusCode": 500,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "Server misconfigured: no COGNITO_USER_POOL_ID set"}),
+        }
+
+    # JWT group check
+    if "ITSAagent" not in groups:
+        return {
+            "statusCode": 403,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "Forbidden: User does not belong to ITSAagent (JWT check)"}),
+        }
+
+    try:
+        if username:
+            resp = cognito.admin_list_groups_for_user(
+                UserPoolId=user_pool_id,
+                Username=username
+            )
+            server_groups = [g['GroupName'] for g in resp.get('Groups', [])]
+            if "ITSAagent" not in server_groups:
+                return {
+                    "statusCode": 403,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "Forbidden: User is not in ITSAagent (checked with Cognito API)"}),
+                }
+    except Exception as e:
+        logger.error(f"Cognito group query exception for user {username}: {e}")
+
+    # ==========================
+    # Route handling
+    # ==========================
     method = event.get("requestContext", {}).get("http", {}).get("method")
     route = event.get("requestContext", {}).get("http", {}).get("path")
 

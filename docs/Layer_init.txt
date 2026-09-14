@@ -1,0 +1,62 @@
+#PSYCOPG2 Layer
+
+mkdir ~/lambda-psycopg2
+cd ~/lambda-psycopg2
+
+cat > Dockerfile << 'EOF'
+FROM public.ecr.aws/lambda/python:3.13
+
+RUN dnf install -y gcc postgresql-devel
+WORKDIR /opt
+RUN pip3 install psycopg2-binary -t python/
+RUN zip -r /tmp/psycopg2-py313-layer.zip python
+EOF
+
+docker build -t psycopg2-builder .
+
+docker create --name temp psycopg2-builder
+docker cp temp:/tmp/psycopg2-py313-layer.zip .
+docker rm temp
+
+aws lambda publish-layer-version \
+  --layer-name psycopg2-py313 \
+  --zip-file fileb://psycopg2-py313-layer.zip \
+  --compatible-runtimes python3.13 \
+  --compatible-architectures x86_64
+
+cd ~
+rm -rf ~/lambda-psycopg2
+
+
+# GROQ layer
+
+
+mkdir ~/lambda-groq
+cd ~/lambda-groq
+
+cat > Dockerfile << 'EOF'
+FROM public.ecr.aws/lambda/python:3.13
+
+RUN dnf install -y zip
+
+WORKDIR /opt
+RUN pip3 install groq -t python/
+
+RUN zip -r /tmp/groq-py313-layer.zip python
+EOF
+
+docker build -t groq-builder .
+
+docker create --name temp groq-builder
+docker cp temp:/tmp/groq-py313-layer.zip .
+docker rm temp
+
+aws lambda publish-layer-version \
+  --layer-name CS301_G3T3_groq-py313 \
+  --zip-file fileb://groq-py313-layer.zip \
+  --compatible-runtimes python3.13 \
+  --compatible-architectures x86_64
+  --region ap-southeast-1
+
+cd ~
+rm -rf ~/lambda-groq
