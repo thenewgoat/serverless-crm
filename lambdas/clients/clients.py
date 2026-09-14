@@ -283,20 +283,20 @@ def lambda_handler(event, context):
         logger.error(f"Cognito group query exception for user {username}: {e}", exc_info=True)
 
     
-    # Routing
-    method = event.get("httpMethod")
-    route = event.get("path")
+    # Routing (API Gateway HTTP API, payload format 2.0)
+    method = event.get("requestContext", {}).get("http", {}).get("method")
+    route = event.get("requestContext", {}).get("http", {}).get("path", "")
     logger.info(f"Routing request: {method} {route}")
 
-    if method == "POST" and route == "/clients":
+    if method == "POST" and route == "/api/clients":
         return create_client(event, context)
-    elif method == "POST" and route.startswith("/clients/") and route.endswith("/verify"):
+    elif method == "POST" and route.startswith("/api/clients/") and route.endswith("/verify"):
         return verify_client(event, context)
-    elif method == "GET" and route.startswith("/clients/"):
+    elif method == "GET" and route.startswith("/api/clients/"):
         return get_client(event, context)
-    elif method == "PUT" and route.startswith("/clients/"):
+    elif method == "PUT" and route.startswith("/api/clients/"):
         return update_client(event, context)
-    elif method == "DELETE" and route.startswith("/clients/"):
+    elif method == "DELETE" and route.startswith("/api/clients/"):
         return delete_client(event, context)
     else:
         logger.warning(f"Not found: {method} {route}")

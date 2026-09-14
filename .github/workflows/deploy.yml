@@ -12,6 +12,7 @@ jobs:
 
     env:
       TF_VAR_environment: dev   # Terraform will pick this up automatically
+      TF_VAR_cognito_user_pool_id: ${{ secrets.COGNITO_USER_POOL_ID }}
       AWS_REGION: ap-southeast-1   # or use a GitHub secret if you want per-env flexibility
 
     steps:
@@ -33,18 +34,21 @@ jobs:
 
       - name: Package Clients & Accounts Lambdas
         run: |
+          # Install wheels built for the Lambda runtime (Linux x86_64, Python 3.11)
+          PIP_LAMBDA="--platform manylinux2014_x86_64 --implementation cp --python-version 3.11 --only-binary=:all:"
+
           # -------- Clients --------
           mkdir -p build/clients
           cp lambdas/clients/clients.py build/clients/
-          pip install -r lambdas/clients/requirements.txt -t build/clients/
+          pip install -r lambdas/clients/requirements.txt -t build/clients/ $PIP_LAMBDA
           cd build/clients
-          zip -r ../../lambdas/clients.zip ./*   
+          zip -r ../../lambdas/clients.zip ./*
           cd ../..
 
           # -------- Accounts --------
           mkdir -p build/accounts
           cp lambdas/accounts/accounts.py build/accounts/
-          pip install -r lambdas/accounts/requirements.txt -t build/accounts/
+          pip install -r lambdas/accounts/requirements.txt -t build/accounts/ $PIP_LAMBDA
           cd build/accounts
           zip -r ../../lambdas/accounts.zip ./*  
           cd ../..
@@ -80,4 +84,4 @@ jobs:
         run: terraform output -json > tf_outputs.json
 
       - name: Show API URL
-        run: cat infra/tf_outputs.json | jq -r .api_url.value
+        run: cat infra/tf_outputs.json | jq -r .api_invoke_url.value

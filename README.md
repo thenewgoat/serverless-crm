@@ -22,8 +22,8 @@ client ──▶ API Gateway (HTTP API) ──▶ Lambda (clients / accounts)
   so they don't open a fresh connection on every call.
 - **Aurora PostgreSQL Serverless v2** holds the `clients` and `accounts` tables
   (see [`db/schema.sql`](db/schema.sql)).
-- **Secrets Manager** stores the DB credentials, and a VPC endpoint lets the Lambdas
-  reach it without a NAT gateway.
+- **Secrets Manager** stores the DB credentials. There's no NAT gateway, so the Lambdas
+  reach Secrets Manager and Cognito through VPC endpoints.
 - The Lambdas check a **Cognito** token and only let users in the `ITSAagent` group through.
 
 ## Routes
@@ -33,6 +33,7 @@ client ──▶ API Gateway (HTTP API) ──▶ Lambda (clients / accounts)
 | POST   | `/api/clients`         | Create a client     |
 | GET    | `/api/clients/{id}`    | Get a client        |
 | PUT    | `/api/clients/{id}`    | Update a client     |
+| POST   | `/api/clients/{id}/verify` | Mark a client as verified |
 | DELETE | `/api/clients/{id}`    | Delete a client     |
 | POST   | `/api/accounts`        | Open an account     |
 | DELETE | `/api/accounts/{id}`   | Close an account    |
@@ -67,10 +68,14 @@ aws dynamodb create-table --table-name terraform-locks \
 
 You'll also need:
 
-- A Secrets Manager secret called `crm-dev-db-credentials` with a `username` and `password`.
 - An IAM role that GitHub Actions can assume through OIDC, saved as the
   `AWS_ROLE_TO_ASSUME` repo secret.
-- A psycopg2 Lambda layer. [`docs/Layer_init.txt`](docs/Layer_init.txt) shows how to build one.
+- A Cognito user pool with an `ITSAagent` group, with its ID saved as the
+  `COGNITO_USER_POOL_ID` repo secret. The Lambdas reach Cognito over PrivateLink,
+  which doesn't work if the pool has a domain assigned.
+
+You don't need to create the DB credentials yourself. Aurora generates them and keeps
+them in Secrets Manager.
 
 ### 2. Deploy, migrate, destroy
 
@@ -84,9 +89,9 @@ All three workflows are started by hand from the **Actions** tab:
 
 ## Status
 
-This is a work in progress. I moved the Lambdas from IAM database auth to
-Secrets Manager credentials with Cognito checks, but `infra/main.tf` hasn't caught
-up yet. The handler names and environment variables it sets still match the old
-version, so expect to fix those before a full deploy works. Also, the token check
-currently decodes the JWT without verifying its signature, so don't treat this as
-production-ready.
+This is a work in progress, so don't treat it as production-ready:
+
+- The token check decodes the JWT without verifying its signature.
+- The clients Lambda only reads and writes name, email and phone, but the `clients`
+  table also requires fields like `dob` and `address`, and it has no `status` column
+  for the verify route yet.

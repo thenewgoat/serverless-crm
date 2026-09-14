@@ -2,8 +2,8 @@
 # API Gateway
 # =======================
 output "api_invoke_url" {
-  description = "Full invoke URL of the deployed stage"
-  value       = "${aws_apigatewayv2_api.crm_api.api_endpoint}/${aws_apigatewayv2_stage.default.name}"
+  description = "Invoke URL of the API ($default stage is served at the root)"
+  value       = aws_apigatewayv2_api.crm_api.api_endpoint
 }
 
 output "api_id" {

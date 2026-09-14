@@ -1,7 +1,5 @@
 SELECT current_database(), current_user, current_schema();
 
-GRANT rds_iam TO $DB_USER;
-
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 GRANT CONNECT ON DATABASE $DB_NAME TO $DB_USER;

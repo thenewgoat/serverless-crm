@@ -166,13 +166,6 @@ module "aurora" {
 }
 
 #######################################
-# Reference Existing Secret (Proxy needs this)
-#######################################
-data "aws_secretsmanager_secret" "db" {
-  name = "crm-dev-db-credentials" # <-- must match your existing secret
-}
-
-#######################################
 # RDS Proxy
 #######################################
 resource "aws_iam_role" "rds_proxy" {
@@ -223,7 +216,7 @@ resource "aws_db_proxy" "aurora_proxy" {
 
   auth {
     auth_scheme = "SECRETS"
-    iam_auth    = "REQUIRED"
+    iam_auth    = "DISABLED" # Lambdas log in with the username/password from the secret
     secret_arn  = module.aurora.cluster_master_user_secret[0].secret_arn
   }
 
@@ -252,19 +245,48 @@ resource "aws_db_proxy_target" "aurora_cluster" {
 }
 
 #######################################
-# VPC Endpoint for Secrets Manager
+# VPC Endpoints (no NAT, so Lambdas reach AWS APIs through these)
 #######################################
+resource "aws_security_group" "endpoints" {
+  name        = "crm-${var.environment}-endpoints-sg"
+  description = "Allow Lambda to reach VPC interface endpoints over HTTPS"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda.id]
+  }
+}
+
 resource "aws_vpc_endpoint" "secretsmanager" {
-  vpc_id            = module.vpc.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.secretsmanager"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        = module.vpc.private_subnets
-  security_group_ids = [aws_security_group.lambda.id]
+  vpc_id             = module.vpc.vpc_id
+  service_name       = "com.amazonaws.${var.aws_region}.secretsmanager"
+  vpc_endpoint_type  = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.endpoints.id]
 
   private_dns_enabled = true
 
   tags = {
     Name        = "crm-${var.environment}-secretsmanager-endpoint"
+    Environment = var.environment
+  }
+}
+
+# For the Cognito group check. PrivateLink doesn't work with user pools that have a domain.
+resource "aws_vpc_endpoint" "cognito_idp" {
+  vpc_id             = module.vpc.vpc_id
+  service_name       = "com.amazonaws.${var.aws_region}.cognito-idp"
+  vpc_endpoint_type  = "Interface"
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [aws_security_group.endpoints.id]
+
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "crm-${var.environment}-cognito-idp-endpoint"
     Environment = var.environment
   }
 }
@@ -292,26 +314,29 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 data "aws_caller_identity" "current" {}
 
-locals {
-  rds_proxy_id = regex("prx-[a-zA-Z0-9]+", aws_db_proxy.aurora_proxy.arn)
-}
-
-resource "aws_iam_policy" "lambda_rds_connect" {
-  name = "lambda-rds-connect-${var.environment}"
+resource "aws_iam_policy" "lambda_app_access" {
+  name = "lambda-app-access-${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [{
-      Effect   = "Allow",
-      Action   = ["rds-db:connect"],
-      Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${local.rds_proxy_id}/${var.db_user}"
-    }]
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["secretsmanager:GetSecretValue"],
+        Resource = module.aurora.cluster_master_user_secret[0].secret_arn
+      },
+      {
+        Effect   = "Allow",
+        Action   = ["cognito-idp:AdminListGroupsForUser"],
+        Resource = "arn:aws:cognito-idp:${var.aws_region}:${data.aws_caller_identity.current.account_id}:userpool/${var.cognito_user_pool_id}"
+      }
+    ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_rds_connect_attach" {
+resource "aws_iam_role_policy_attachment" "lambda_app_access_attach" {
   role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_rds_connect.arn
+  policy_arn = aws_iam_policy.lambda_app_access.arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
@@ -322,12 +347,31 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
 #######################################
 # Lambda Functions
 #######################################
+locals {
+  clients_zip  = "${path.module}/../lambdas/clients.zip"
+  accounts_zip = "${path.module}/../lambdas/accounts.zip"
+
+  # Environment variables the Lambda code reads
+  lambda_env = {
+    ENVIRONMENT          = var.environment
+    DB_HOST              = aws_db_proxy.aurora_proxy.endpoint
+    DB_NAME              = var.db_name
+    DB_PORT              = "5432"
+    SECRET_ARN           = module.aurora.cluster_master_user_secret[0].secret_arn
+    COGNITO_USER_POOL_ID = var.cognito_user_pool_id
+    ALLOWED_ORIGIN       = var.allowed_origin
+  }
+}
+
 resource "aws_lambda_function" "clients" {
-  function_name    = "crm-clients-${var.environment}"
-  handler          = "clients.handler"
-  runtime          = "python3.11"
-  role             = aws_iam_role.lambda_exec.arn
-  filename         = "${path.module}/../lambdas/clients.zip"
+  function_name = "crm-clients-${var.environment}"
+  handler       = "clients.lambda_handler"
+  runtime       = "python3.11"
+  timeout       = 15
+  role          = aws_iam_role.lambda_exec.arn
+  filename      = local.clients_zip
+  # The zips only exist after the deploy workflow packages them (not during destroy)
+  source_code_hash = fileexists(local.clients_zip) ? filebase64sha256(local.clients_zip) : null
 
   vpc_config {
     subnet_ids         = module.vpc.private_subnets
@@ -335,23 +379,18 @@ resource "aws_lambda_function" "clients" {
   }
 
   environment {
-    variables = {
-      ENVIRONMENT = var.environment
-      REGION      = var.aws_region
-      DB_NAME     = var.db_name
-      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
-      DB_PORT     = "5432"
-      DB_USER     = var.db_user
-    }
+    variables = local.lambda_env
   }
 }
 
 resource "aws_lambda_function" "accounts" {
   function_name    = "crm-accounts-${var.environment}"
-  handler          = "accounts.handler"
+  handler          = "accounts.lambda_handler"
   runtime          = "python3.11"
+  timeout          = 15
   role             = aws_iam_role.lambda_exec.arn
-  filename         = "${path.module}/../lambdas/accounts.zip"
+  filename         = local.accounts_zip
+  source_code_hash = fileexists(local.accounts_zip) ? filebase64sha256(local.accounts_zip) : null
 
   vpc_config {
     subnet_ids         = module.vpc.private_subnets
@@ -359,14 +398,7 @@ resource "aws_lambda_function" "accounts" {
   }
 
   environment {
-    variables = {
-      ENVIRONMENT = var.environment
-      REGION      = var.aws_region
-      DB_NAME     = var.db_name
-      DB_HOST     = aws_db_proxy.aurora_proxy.endpoint
-      DB_PORT     = "5432"
-      DB_USER     = var.db_user
-    }
+    variables = local.lambda_env
   }
 }
 
@@ -419,6 +451,12 @@ resource "aws_apigatewayv2_route" "get_client" {
 resource "aws_apigatewayv2_route" "update_client" {
   api_id    = aws_apigatewayv2_api.crm_api.id
   route_key = "PUT /api/clients/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.clients.id}"
+}
+
+resource "aws_apigatewayv2_route" "verify_client" {
+  api_id    = aws_apigatewayv2_api.crm_api.id
+  route_key = "POST /api/clients/{id}/verify"
   target    = "integrations/${aws_apigatewayv2_integration.clients.id}"
 }
 

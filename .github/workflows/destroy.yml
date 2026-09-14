@@ -17,6 +17,7 @@ jobs:
 
     env:
       TF_VAR_environment: ${{ github.event.inputs.environment }}
+      TF_VAR_cognito_user_pool_id: ${{ secrets.COGNITO_USER_POOL_ID }}
       AWS_REGION: ap-southeast-1   # match your deployment region
 
     steps:

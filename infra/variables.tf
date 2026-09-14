@@ -16,16 +16,15 @@ variable "db_name" {
   default     = "crm"
 }
 
-variable "db_secret_name" {
-  description = "Name of the existing Secrets Manager secret containing Aurora DB credentials"
+variable "cognito_user_pool_id" {
+  description = "ID of the existing Cognito user pool whose ITSAagent group may call the API"
   type        = string
-  default     = "crm/aurora/db-creds"
 }
 
-variable "db_user" {
-  description = "Database user for IAM authentication"
+variable "allowed_origin" {
+  description = "Value for the Access-Control-Allow-Origin header returned by the Lambdas"
   type        = string
-  default     = "crmadmin"  # or whatever your Aurora user is
+  default     = "*"
 }
 
 

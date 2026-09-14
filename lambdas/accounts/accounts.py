@@ -107,11 +107,13 @@ def lambda_handler(event, context):
     }
 
     # Handle CORS preflight
-    if event.get('httpMethod', '') == 'OPTIONS':
+    if event.get("requestContext", {}).get("http", {}).get("method") == 'OPTIONS':
         return {"statusCode": 200, "headers": cors_headers, "body": ""}
 
     # --- AUTHENTICATION & GROUP CHECK START ---
-    auth_header = event.get('headers', {}).get('Authorization', '')
+    # HTTP API lowercases header names
+    headers = event.get('headers', {})
+    auth_header = headers.get('Authorization') or headers.get('authorization') or ''
     if not auth_header.startswith('Bearer '):
         return {
             "statusCode": 401,
